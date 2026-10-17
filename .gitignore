@@ -1,0 +1,20 @@
+node_modules/
+dist/
+dist_electron/
+.vite/
+
+# Runtime data: recreated by `npm run seed`. Contains the SQLite DB, downloaded
+# media and .token-secret (the HMAC signing key), so it must never be published.
+server/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Gradle / Kotlin / IDE scratch
+.gradle/
+.kotlin/
+local.properties
+
+*.log
+*.tsbuildinfo
+.DS_Store
