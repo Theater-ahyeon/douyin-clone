@@ -19,13 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Additional notice (not part of the MIT grant, and not a permission to use the
-trademarks below): this project is an independent clean-room study of a
-short-video product layout. It is not affiliated with, endorsed by, or derived
-from Douyin, TikTok, or any other ByteDance product, and it contains none of
-their source code, artwork, logos, icons, fonts, or video content. The seed
-media is fetched from MDN's CC0 shared assets. Do not use this project in a way
-that impersonates an official product or infringes third-party rights.
