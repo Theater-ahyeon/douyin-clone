@@ -1,0 +1,169 @@
+@media (max-width: 1080px) {
+  .vp-body {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .vp-comments {
+    grid-column: 1 / -1;
+    height: 480px;
+  }
+}
+
+@media (max-width: 900px) {
+  :root {
+    --topbar-h: 56px;
+  }
+  .sidebar {
+    display: none;
+  }
+  .tabbar {
+    display: flex;
+  }
+  .page {
+    padding-bottom: calc(54px + env(safe-area-inset-bottom));
+  }
+  .page-feed {
+    padding-bottom: calc(54px + env(safe-area-inset-bottom));
+  }
+  .topbar {
+    padding: 0 12px;
+    gap: 8px;
+  }
+  .hint-chip {
+    display: none;
+  }
+  .topbar .btn.pill span {
+    display: none;
+  }
+  .search-wrap {
+    max-width: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .card-stage {
+    padding: 0;
+    gap: 0;
+  }
+  .video-frame {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    aspect-ratio: auto !important;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  /* Pinned inside the card. Its containing block is .feed-item (position:relative — .card-stage
+     is static), and at this width .feed-item and .video-frame share one rect, so top/bottom are
+     genuine card insets. Pinning BOTH top and bottom gives the rail a definite height that can
+     never grow up past the card and over the top bar (the old bottom:84px anchor with a 406px
+     tall rail put its top at page y:9); flex-end keeps it bottom-aligned like Douyin and
+     overflow:hidden is the hard guarantee. bottom:34px lines the rail's base up with .card-meta's
+     own 34px inset so both blocks share one bottom edge. Scoped to .feed-item so the
+     video-detail page's rail (also .action-rail) is never pulled out of its grid cell. */
+  .feed-item .action-rail {
+    position: absolute;
+    top: 12px;
+    left: auto;
+    right: 10px;
+    bottom: 34px;
+    z-index: 5;
+    width: 56px;
+    gap: clamp(6px, 1.4vh, 12px);
+    padding: 0;
+    align-items: center;
+    justify-content: flex-end;
+    overflow: hidden;
+    /* the box is taller than its content: taps on the empty top band must fall through to
+       .tap-layer underneath instead of being swallowed by the rail */
+    pointer-events: none;
+  }
+  .feed-item .action-rail > * {
+    pointer-events: auto;
+  }
+  .card-meta {
+    /* rail occupies x [W-66, W-10]; keep a 12px gutter between the caption and the icons */
+    right: 78px;
+    left: 12px;
+    bottom: 34px;
+    max-width: none;
+  }
+  .feed-hud {
+    /* was bottom:92px: with the rail now owning the full right edge of the card the two HUD
+       buttons painted straight over the disc / share icons */
+    top: 12px;
+    right: 12px;
+    bottom: auto;
+  }
+  .drawer {
+    width: 100%;
+  }
+  .msg-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .conv-list.hide-mobile {
+    display: none;
+  }
+  .thread:not(.show-mobile) {
+    display: none;
+  }
+  .only-mobile {
+    display: inline-flex;
+  }
+  .upload-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .profile {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+  .profile-actions {
+    grid-column: 1 / -1;
+    padding-top: 6px;
+  }
+  .edit-panel {
+    margin-top: 6px;
+  }
+  .vp-body {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 6px 14px 0;
+  }
+  .vp-rail {
+    display: none;
+  }
+  .section,
+  .page-head {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .thumb-grid {
+    gap: 6px;
+  }
+  .thumb-cap {
+    font-size: 11px;
+    bottom: 20px;
+  }
+  .cover {
+    height: 128px;
+  }
+}
+
+@media (max-width: 400px) {
+  .profile-stats {
+    gap: 14px;
+  }
+  .feed-item .action-rail {
+    right: 8px;
+    width: 52px;
+  }
+  .card-meta {
+    /* rail occupies x [W-60, W-8]; 72px keeps the same 12px gutter on a 400px-wide card */
+    right: 72px;
+    left: 10px;
+  }
+  .thumb-grid {
+    gap: 4px;
+  }
+  .login-card {
+    padding: 18px;
+  }
+}

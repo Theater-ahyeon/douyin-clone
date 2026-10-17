@@ -1,0 +1,258 @@
+:root {
+  --bg: #000;
+  --panel: #16161a;
+  --panel-2: #1f1f23;
+  --chrome: #0b0b0d;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --text: #f1f1f2;
+  --text-2: rgba(245, 245, 245, 0.6);
+  --text-3: rgba(245, 245, 245, 0.38);
+  --accent: #fe2c55;
+  --accent-2: #25f4ee;
+  --sidebar-w: 200px;
+  --topbar-h: 64px;
+  --rail-w: 78px;
+  --radius: 8px;
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+img,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 14px;
+  white-space: nowrap;
+  transition: filter 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn.pill {
+  border-radius: 20px;
+}
+.btn.small {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.btn.block {
+  width: 100%;
+  margin-top: 10px;
+}
+.btn.accent {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.btn.accent:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+.btn.ghost {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.btn.ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+.btn.outline {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+}
+.btn.outline:hover:not(:disabled) {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--text-2);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+.icon-btn.tiny {
+  width: 22px;
+  height: 22px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 12px;
+}
+.field > span {
+  display: block;
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+.field input,
+.field textarea {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--text);
+}
+.field input:focus,
+.field textarea:focus {
+  border-color: var(--accent-2);
+  background: rgba(255, 255, 255, 0.09);
+}
+.field textarea {
+  resize: vertical;
+  min-height: 62px;
+}
+
+.form-error {
+  color: var(--accent);
+  font-size: 12.5px;
+  margin: 4px 0 8px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dim {
+  color: var(--text-3);
+}
+
+.spin {
+  animation: rot 900ms linear infinite;
+  transform-origin: 50% 50%;
+}
+
+@keyframes rot {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.hidden {
+  display: none !important;
+}
+
+body.booting .page {
+  opacity: 0.65;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning,
+  .spin {
+    animation-duration: 6s;
+  }
+}
