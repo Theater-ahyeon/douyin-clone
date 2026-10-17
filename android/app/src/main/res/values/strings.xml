@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Connection settings -->
+    <string name="settings_title">连接设置</string>
+    <string name="settings_server_hint">http://192.168.1.20:8787</string>
+    <string name="settings_save">保存并重试</string>
+    <string name="settings_reset_default">恢复默认</string>
+    <string name="settings_cancel">取消</string>
+    <string name="settings_current">当前：%1$s</string>
+    <string name="settings_invalid">地址无效，必须以 http:// 或 https:// 开头，并包含主机名。</string>
+    <string name="settings_saved">已保存到 %1$s</string>
+    <string name="settings_desc">填写后端 FastVideo 服务地址（含端口）。模拟器访问宿主机请用 10.0.2.2。</string>
+
+    <!-- Offline / unreachable -->
+    <string name="error_title">无法连接到服务器</string>
+    <string name="error_retry">重试</string>
+    <string name="error_settings">连接设置</string>
+    <string name="error_desc">请确认后端已启动：npm run build &amp;&amp; npm start</string>
+    <string name="error_tls">证书校验失败，已取消加载（不提供“继续访问”）。</string>
+    <string name="error_renderer">页面渲染进程已重启</string>
+    <string name="error_detail_unreachable">%1$s\n%2$s（code %3$d）</string>
+    <string name="error_detail_tls">%1$s\n%2$s</string>
+
+    <!-- Navigation confirmations -->
+    <string name="external_open_title">在系统浏览器中打开？</string>
+    <string name="external_open_message">这个链接不属于当前服务器：%1$s</string>
+    <string name="external_open_confirm">打开</string>
+    <string name="external_open_deny">取消</string>
+    <string name="external_blocked">已阻止离开当前服务器的跳转</string>
+
+    <!-- Intent-originated origin switch -->
+    <string name="switch_origin_title">切换服务器？</string>
+    <string name="switch_origin_message">有外部请求希望把本应用指向：%1$s（当前为 %2$s）。仅在你自己发起该请求时允许。</string>
+    <string name="switch_origin_allow">切换</string>
+    <string name="switch_origin_deny">忽略</string>
+
+    <!-- Permission prompts -->
+    <string name="chooser_missing">没有可以打开文件的应用</string>
+    <string name="permission_rationale_message">这个网页想使用 %1$s。拒绝后相关功能不可用。</string>
+
+    <!-- Fullscreen video -->
+    <string name="fullscreen_close">退出全屏</string>
+
+    <!-- Accessibility -->
+    <string name="cd_settings_button">打开连接设置</string>
+    <string name="cd_error_icon">连接失败</string>
+</resources>

@@ -1,0 +1,13 @@
+# Machine-specific / generated files for the Android client.
+# local.properties holds an absolute sdk.dir path and must never be committed.
+local.properties
+.gradle/
+build/
+app/build/
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties.bak

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- The shell only ever talks to one HTTP origin, so INTERNET is the only hard requirement. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Declared because a web page inside a WebView can request getUserMedia. Not enforced:
+         AppWebChromeClient denies every permission request unless it comes from the configured
+         origin AND the user already granted the runtime permission. -->
+    <uses-permission android:name="android.permission.CAMERA" android:required="false" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" android:required="false" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <!-- Package visibility on API 30+: needed to check that a system browser exists before
+         handing an off-origin link to it. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:hardwareAccelerated="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="${shellLabel}"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
+        android:theme="@style/Theme.FastVideo.Shell"
+        tools:targetApi="33">
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|layoutDirection"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- A `server_url` string extra on an explicit component start overrides the
+                 baked-in origin without rebuilding; see android/README.md for the adb form. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fastvideo" android:host="shell" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

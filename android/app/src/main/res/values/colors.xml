@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="feed_black">#FF000000</color>
+    <color name="shell_panel">#F2121216</color>
+    <color name="shell_stroke">#33FFFFFF</color>
+    <color name="shell_text_primary">#FFF2F2F5</color>
+    <color name="shell_text_secondary">#B3A0A0AE</color>
+    <color name="shell_accent">#FF5B5BF0</color>
+    <color name="shell_accent_pressed">#FF4444C8</color>
+    <color name="shell_ghost">#1AFFFFFF</color>
+    <color name="shell_progress">#FF7A7AFF</color>
+    <color name="ic_launcher_background">#FF241B5A</color>
+</resources>
