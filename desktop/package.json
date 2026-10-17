@@ -1,0 +1,26 @@
+{
+  "name": "douyin-clone-desktop",
+  "version": "1.0.0",
+  "productName": "Douyin Clone",
+  "private": true,
+  "description": "Electron desktop shell for the Douyin Clone web client and its zero-dependency Node backend.",
+  "author": "douyin-clone",
+  "homepage": "http://127.0.0.1:8787/",
+  "license": "MIT",
+  "main": "main.cjs",
+  "appId": "com.douyinclone.desktop",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "node src/launch.cjs --dev",
+    "start": "node src/launch.cjs --prod",
+    "smoke": "node src/launch.cjs --prod --smoke",
+    "build:win": "node src/build.cjs --win",
+    "check": "node src/check.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.9.0",
+    "electron-builder": "26.15.3"
+  }
+}

@@ -1,0 +1,96 @@
+# electron-builder configuration for the Windows desktop client.
+#
+# Run it with (npx is banned on this machine, so the CLI is resolved by hand):
+#   node src/build.cjs --win            # portable + NSIS per electron-builder.yml
+#   node src/build.cjs --win --dir      # unpacked resources only, fast
+#
+# electron-builder reads package.json for name/version/productName/author and
+# this file for everything packaging-related.
+
+appId: com.douyinclone.desktop
+productName: Douyin Clone
+copyright: MIT
+artifactName: ${productName}-${version}-${arch}.${ext}
+
+directories:
+  # cwd (desktop/) is the app directory; the repo root is only a source of
+  # extraResources, never part of the app payload.
+  buildResources: build
+  output: dist_electron
+
+# The forked backend is launched by absolute path with ELECTRON_RUN_AS_NODE, and
+# `fork()` of a script living inside app.asar is a known source of surprises on
+# Windows. Keeping the shell unpacked makes every path a real file.
+asar: false
+
+# Only what the main process and the forked child need at runtime.
+files:
+  - package.json
+  - main.cjs
+  - preload.cjs
+  - src/backend.cjs
+  - src/child-server.cjs
+  - src/ipc-schema.cjs
+  - src/loading-page.cjs
+  - src/window-state.cjs
+  - build/icon.png
+
+extraResources:
+  # Backend sources, laid out so server/src/config.js resolves SERVER_ROOT and
+  # REPO_ROOT exactly like it does in the repo: <resources>/backend/server.
+  # server/package.json is required because it declares "type": "module" for the
+  # ESM sources inside server/src.
+  - from: ../server/src
+    to: backend/server/src
+    filter:
+      - '**/*.js'
+  - from: ../server/package.json
+    to: backend/server/package.json
+  # The production entrypoint stays in the package so the same build can be
+  # started from a console without the GUI:
+  #   node resources/backend/scripts/start.mjs
+  - from: ../scripts/start.mjs
+    to: backend/scripts/start.mjs
+  # Built frontend. web/dist is what scripts/start.mjs would resolve by default
+  # (REPO/web/dist); DY_WEB_DIST is passed explicitly anyway, so moving it is safe.
+  - from: ../web/dist
+    to: backend/web/dist
+  # Demo database + media shipped read-only under resources and copied to
+  # userData/server-data on first launch (see src/backend.cjs seedDataDir).
+  # .token-secret is deliberately NOT shipped: each install signs tokens with its
+  # own freshly generated secret.
+  - from: ../server/data
+    to: backend-data-seed
+    filter:
+      - app.sqlite
+      - videos/**
+      - thumbs/**
+
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+  requestedExecutionLevel: asInvoker
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+
+nsis:
+  artifactName: ${productName}-${version}-setup.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Douyin Clone
+  deleteAppDataOnUninstall: false
+
+# Nothing native to rebuild, and running npm against the repo root workspace
+# would touch web/ and server/ - explicitly off.
+npmRebuild: false
+buildDependenciesFromSource: false
