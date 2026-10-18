@@ -21,7 +21,7 @@
 
 ```bash
 npm install            # 安装 web 工作区依赖（react / vite / typescript）
-npm run seed           # 建库 + 生成 8 用户 / 43 视频 / 评论 / 关注 / 私信
+npm run seed           # 建库 + 生成 8 用户 / 40 视频 / 136 评论 / 关注 / 私信
 npm run dev            # 同时起 API(:8787) 与 Vite(:5173)
 ```
 
@@ -32,6 +32,10 @@ npm run dev            # 同时起 API(:8787) 与 Vite(:5173)
 ```bash
 npm run seed -- --from /path/to/your/videos   # 摄入本地 mp4/webm
 ```
+
+40 条视频复用少量 CC0 素材（联网时抓到 5 个文件），因此 `media_objects` 少于视频数是正常的；`--from` 的素材数量决定离线播种能生成多少条**可播放**的视频，缺到的素材退化为纯色 poster 卡片。
+
+端口可换：`DY_PORT=8888 DY_WEB_PORT=5180 npm run dev`，Vite 代理会跟随 `DY_PORT`，不用改配置。全部环境变量在 `server/src/config.js` 顶部集中注释。
 
 **单端口生产模式**（前端与 API 同源，SPA 回退）：
 
@@ -105,7 +109,7 @@ Base `http://127.0.0.1:8787`，鉴权 `Authorization: Bearer <token>`。
 | `POST` | `/api/auth/register` · `/api/auth/login` |
 | `GET PATCH` | `/api/users/me` |
 | `GET` | `/api/feed` · `/api/following-feed` · `/api/videos/:id` · `/api/users/:id` · `/api/users/:id/videos` · `/api/users/:id/followers` · `/api/users/:id/following` |
-| `POST` | `/api/videos` · `/api/videos/:id/like` · `/api/videos/:id/favorite` · `/api/videos/:id/views` · `/api/videos/:id/comments` · `/api/users/:id/follow` · `/api/messages/:userId` |
+| `POST` | `/api/videos` · `/api/videos/:id/like` · `/api/videos/:id/favorite` · `/api/videos/:id/views` · `/api/videos/:id/share` · `/api/videos/:id/comments` · `/api/users/:id/follow` · `/api/messages/:userId` |
 | `DELETE` | `/api/videos/:id/like` · `/api/videos/:id/favorite` · `/api/comments/:id` · `/api/users/:id/follow` |
 | `GET` | `/api/videos/:id/comments` · `/api/search?q=` · `/api/conversations` · `/api/messages/:userId` |
 | `PUT` | `/api/upload`（**裸字节流**，元数据走 `X-Meta` 头，非 multipart） |
@@ -113,7 +117,7 @@ Base `http://127.0.0.1:8787`，鉴权 `Authorization: Bearer <token>`。
 
 分页一律 **keyset cursor**（base64url 不透明游标，按 `(sort_key,id)` 前进），不使用 `OFFSET`，因此深翻页不退化。
 
-已实测通过的行为：错误密码 `401`、缺失 token `401`、伪造 token `401`、路径穿越 `400`、超长请求体 `413`、`Range` 返回 `206` 且带 `Content-Range: bytes 0-1023/1128375`。
+已实测通过的行为：错误密码 `401`、缺失 token `401`、伪造 token `401`、重名注册 `409 username_taken`、引用他人上传的 `media_key` `403 media_not_owned`、路径穿越 `400`、超长请求体 `413`、空上传体 `400 empty_upload`、`Range` 返回 `206` 且带 `Content-Range: bytes 1848-2047/2048`、非法区间（`bytes=5-3`）按 RFC 9110 忽略并回 `200` 整体。
 
 ---
 
@@ -131,7 +135,7 @@ Base `http://127.0.0.1:8787`，鉴权 `Authorization: Bearer <token>`。
 - 动画只用 `transform`/`opacity`。
 - 路由级 `React.lazy` 代码分割。
 
-**构建产物**（`vite build`）：74 模块，首屏 `index.js` **185.02 kB / gzip 60.18 kB**，CSS 26.87 kB / gzip 6.33 kB，各页面独立分片 0.5–8.9 kB。
+**构建产物**（`vite build`）：74 模块，首屏 `index.js` **186.15 kB / gzip 60.53 kB**，CSS 27.67 kB / gzip 6.50 kB，各页面独立分片 0.5–9.1 kB。
 
 ### 5.2 后端：压测驱动的索引修复
 
@@ -218,10 +222,13 @@ douyin-clone/
 - **无真实推荐算法**：`/api/feed` 是按热度权重的确定性排序，不是协同过滤。
 - **无转码/多码率**：上传什么码率就发什么，没有 HLS/DASH 自适应；生产需接 ffmpeg 管线。
 - **无对象存储/CDN**：媒体落本地磁盘，`Range` 由 Node 自己服务。
+- **无限流与风控**：`POST /api/videos/:id/views` 匿名可调且不计数去重，播放量/分享数可被脚本刷；真实产品需要设备指纹与频控（本项目的签名逆向结论仅用于理解结构，未复刻其风控）。
+- **搜索是 `LIKE` 子串**：没有 FTS5 倒排，中文分词与相关性排序都没有；离线播种语料少时更容易空结果。
 - **私信无实时推送**：拉取式，无 WebSocket。
 - **审核、风控、埋点、直播、电商**等抖音真实系统未实现。
 - **桌面端未做像素级视觉验收**：以 DOM 几何断言验证布局正确性，未逐屏比对。
 - **APK 未做真机安装验证**（本机无连接设备），但已在模拟器上采集运行时截图。
+- **后台暂停不完全**：`videoPool` 监听 `visibilitychange` 暂停/恢复全部媒体元素，安卓壳另外调 `webView.onPause()/pauseTimers()`；两者叠加在实测机型有效，但个别 WebView 版本在 Activity 挂起时不触发 page-visibility，可能后台续播声音。
 - 种子视频元数据（1080×1920）与实际素材（MDN `flower.webm` 为横屏）不完全一致，故桌面端视频框按 9:16 留黑边。
 
 ---
@@ -231,8 +238,22 @@ douyin-clone/
 ```bash
 npm run typecheck      # tsc --noEmit，0 error
 npm run build          # vite build
+npm run seed           # 造演示数据（--from <dir> 可灌本地视频）
+npm run dev            # 起 API + 前端，另开终端
+npm run smoke          # 25 条契约断言；默认打 http://127.0.0.1:8787，可用 DY_SMOKE_BASE 指向别处
 npm run benchmark      # 自研压测器，输出 p50/p95/p99 + 事件循环延迟 + Range 吞吐
 node --check server/src/*.js
+node desktop/src/check.cjs        # 桌面端静态守卫：IPC 白名单/发送方校验/菜单与导航目标一致/打包清单
+```
+
+`npm run smoke` 覆盖鉴权（错误口令 401、伪造/缺失 token 401、重名注册 409）、发布授权（用别人的 `media_key` 发布 403）、计数（点赞/取消、分享、播放）、游标分页不重复、413 体积上限、路径穿越 400，以及三条 Range 语义（后缀区间 206、非法区间按 RFC 9110 忽略、不可满足区间 416）。它会往目标库写数据，请对着临时库或演示库跑。
+
+CI（`.github/workflows/ci.yml`）在 Node 24 上跑 typecheck、`node --check`、桌面守卫、vite build，并对临时库起一次真实 API 服务做 `/api/health` + 注册/登录/发布/分享/越权引用的端到端断言。
+
+安卓端依赖 Android SDK 与 JDK，CI 未覆盖，本地执行：
+
+```bash
+cd android && ./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug
 ```
 
 ---
