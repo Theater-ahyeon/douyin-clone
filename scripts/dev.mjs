@@ -113,8 +113,9 @@ function main() {
     process.exit(1);
   }
 
+  const webPort = process.env.DY_WEB_PORT || '5173';
   note(`api  -> http://127.0.0.1:${process.env.DY_PORT || 8787}`);
-  note(`web  -> http://127.0.0.1:${process.env.DY_WEB_PORT || 5173} (proxies /api and /media to the api)`);
+  note(`web  -> http://127.0.0.1:${webPort} (proxies /api and /media to the api)`);
 
   start('api', process.execPath, ['--watch', 'src/index.js'], {
     cwd: SERVER,
@@ -122,7 +123,7 @@ function main() {
     stdio: ['inherit', 'pipe', 'pipe'],
   });
 
-  start('web', process.execPath, [VITE_ENTRY], {
+  start('web', process.execPath, [VITE_ENTRY, '--port', webPort], {
     cwd: WEB,
     env: { ...process.env, FORCE_COLOR: useColor ? '1' : '0' },
     stdio: ['inherit', 'pipe', 'pipe'],

@@ -9,7 +9,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { HOST, LOG, PORT } from '../server/src/config.js';
-import { get, openDatabase } from '../server/src/db.js';
+import { closeDatabase, get, openDatabase } from '../server/src/db.js';
 import { ensureMediaDir } from '../server/src/media.js';
 import { startServer } from '../server/src/server.js';
 
@@ -46,11 +46,21 @@ async function main() {
     if (closing) return;
     closing = true;
     if (LOG) console.log(`[start] ${signal} received, closing server`);
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 2000).unref();
+    server.close(() => {
+      closeDatabase();
+      process.exit(0);
+    });
+    // Do not let a keep-alive connection block the shutdown.
+    setTimeout(() => {
+      closeDatabase();
+      process.exit(0);
+    }, 2000).unref();
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('unhandledRejection', (reason) => {
+    console.error('[start] unhandled rejection:', reason);
+  });
 }
 
 main().catch((error) => {

@@ -88,12 +88,18 @@ function die(msg) {
 
 // Copy the DB into a private dir so writes (registered users, the upload token
 // secret) never touch seeded rows, and so a crash can't leave the real WAL dirty.
+// `VACUUM INTO` is used instead of a file copy: it snapshots through SQLite while
+// the dev server is mid-commit, whereas a byte copy of a hot WAL database can land
+// a torn page and make the run die with "database image is malformed".
 function makeWorkspace() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dy-bench-'));
-  fs.copyFileSync(path.join(SEED_DATA, 'app.sqlite'), path.join(dir, 'app.sqlite'));
-  // Only the main DB file is needed; WAL/SHM from the source instance are foreign.
-  // Re-open below with node:sqlite so the copy is checkpointed clean and the new
-  // server starts from a known-good snapshot.
+  const source = new DatabaseSync(path.join(SEED_DATA, 'app.sqlite'), { readOnly: true });
+  try {
+    source.exec('PRAGMA busy_timeout = 5000');
+    source.prepare('VACUUM INTO ?').run(path.join(dir, 'app.sqlite'));
+  } finally {
+    source.close();
+  }
   const db = new DatabaseSync(path.join(dir, 'app.sqlite'));
   try { db.exec('PRAGMA journal_mode = WAL'); db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } finally { db.close(); }
 

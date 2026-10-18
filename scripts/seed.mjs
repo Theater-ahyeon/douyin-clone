@@ -193,6 +193,10 @@ function download(url, dest, { redirects = 3 } = {}) {
       });
       // pipe() owns the backpressure; the 'data' listener above only counts bytes.
       response.pipe(file);
+      // Without this the promise never settles when the peer dies mid-body:
+      // no 'finish' on the file, and `request` has left its headers phase.
+      response.on('error', (error) => abort(error.message));
+      response.on('aborted', () => abort('response aborted'));
       file.on('error', (error) => abort(error.message));
       file.on('finish', () => file.close(() => (got > 0 ? resolve({ file: path.basename(dest), bytes: got }) : abort('empty response'))));
       request.setTimeout(30000, () => abort('timed out'));
@@ -218,16 +222,27 @@ async function acquireMedia(options) {
     }
     const videos = entries.filter((entry) => entry.isFile() && /\.(mp4|m4v|webm|mov|mkv|ogv)$/i.test(entry.name));
     if (!videos.length) throw new Error(`--from ${dir} has no .mp4/.webm/.mov/.mkv/.ogv files`);
+    const empty = [];
     for (const entry of videos) {
+      const source = path.join(dir, entry.name);
+      const bytes = fs.statSync(source).size;
+      // a 0-byte file copies happily and seeds a card that can never play (the media route
+      // answers every range with 416), so refuse it instead of publishing a dead video
+      if (!bytes) {
+        empty.push(entry.name);
+        continue;
+      }
       const target = path.join(MEDIA_DIR, `seed-local-${entry.name.replace(/[^A-Za-z0-9._-]+/g, '-')}`);
-      fs.copyFileSync(path.join(dir, entry.name), target);
+      fs.copyFileSync(source, target);
       collected.push({
         file: path.basename(target),
-        bytes: fs.statSync(target).size,
+        bytes,
         duration: 15,
         posterHint: collected.length,
       });
     }
+    if (empty.length) console.warn(`[seed] --from ${dir}: skipped empty file(s): ${empty.join(', ')}`);
+    if (!collected.length) throw new Error(`--from ${dir}: every video file was 0 bytes`);
     console.log(`[seed] ingested ${collected.length} local file(s) from ${dir}`);
     return collected;
   }
