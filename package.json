@@ -15,6 +15,7 @@
     "build": "npm run build -w web",
     "start": "node scripts/start.mjs",
     "seed": "node scripts/seed.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "typecheck": "npm run typecheck -w web && npm run typecheck -w server"
   }
