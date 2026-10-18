@@ -77,6 +77,7 @@ npm start              # 仅 :8787 同时提供静态资源与 API
 
 - [`docs/perf-frontend.md`](docs/perf-frontend.md) — 前端卡顿分析与视频池/虚拟化
 - [`docs/perf-backend.md`](docs/perf-backend.md) — 后端压测、索引与流式性能
+- [`docs/feature-parity.md`](docs/feature-parity.md) — 与抖音的功能对齐规格：可观察行为、差距归类、明确不做的部分
 - [`desktop/README.md`](desktop/README.md) — Windows 端打包与安全 IPC
 - [`android/README.md`](android/README.md) — 安卓端构建、安装与 WebView 安全策略
 
@@ -211,7 +212,7 @@ douyin-clone/
 ├── desktop/           main.cjs preload.cjs src/ electron-builder.yml
 ├── android/           app/src/main/java/…  gradle/  verification/
 ├── scripts/           seed.mjs  dev.mjs  start.mjs  benchmark.mjs
-└── docs/              perf-frontend.md  perf-backend.md
+└── docs/              perf-frontend.md  perf-backend.md  feature-parity.md
 ```
 
 ---
