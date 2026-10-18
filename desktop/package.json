@@ -5,7 +5,7 @@
   "private": true,
   "description": "Electron desktop shell for the Douyin Clone web client and its zero-dependency Node backend.",
   "author": "douyin-clone",
-  "homepage": "http://127.0.0.1:8787/",
+  "homepage": "https://github.com/Theater-ahyeon/douyin-clone",
   "license": "MIT",
   "main": "main.cjs",
   "appId": "com.douyinclone.desktop",

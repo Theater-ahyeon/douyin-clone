@@ -64,6 +64,7 @@ const state = {
   appOrigin: '',
   internalUrls: new Set(),
   shuttingDown: false,
+  starting: false,
   smokeDone: false,
 };
 
@@ -119,11 +120,22 @@ function frameAllowed(rawUrl) {
   if (isSameAppOrigin(rawUrl, state.appOrigin)) return true;
   // Vite answers on both 127.0.0.1 and localhost, and server/src/config.js
   // allowlists both for CORS. Keep that twin usable in dev, nothing else.
-  if (MODE === 'dev') {
-    const parsed = parseUrl(state.appUrl);
+  if (MODE === 'dev' && state.appOrigin) {
+    const parsed = parseUrl(state.appOrigin);
     return isSameAppOrigin(rawUrl, `http://localhost:${portOf(parsed)}`);
   }
   return false;
+}
+
+/**
+ * IPC is stricter than navigation: the loading/error page we paint is trusted to
+ * be displayed, never to be handed `openExternal`/`notify`/window control. A
+ * data: URL has an opaque origin, so nothing there ever needs the bridge.
+ */
+function ipcFrameAllowed(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl) return false;
+  if (state.internalUrls.has(rawUrl)) return false;
+  return frameAllowed(rawUrl);
 }
 
 /* ------------------------------------------------------- external and guards */
@@ -284,6 +296,12 @@ function createWindow(store) {
   win.webContents.on('did-finish-load', () => log(`did-finish-load ${win.webContents.getURL()}`));
   win.webContents.on('did-navigate-in-page', (_e, url) => log(`did-navigate-in-page ${url}`));
 
+  // The menu and every IPC gate read this at call time, so a window that is
+  // destroyed mid-handler can never be touched through the saved reference.
+  win.on('closed', () => {
+    if (state.win === win) state.win = null;
+  });
+
   return win;
 }
 
@@ -300,7 +318,7 @@ function rejectUntrusted(event) {
   if (!win || win.isDestroyed()) return 'no window';
   if (!event.sender || event.sender.id !== win.webContents.id) return 'sender is not the main window';
   const frameUrl = event.senderFrame && event.senderFrame.url;
-  if (!frameAllowed(frameUrl)) return `frame origin not allowed: ${String(frameUrl).slice(0, 90)}`;
+  if (!ipcFrameAllowed(frameUrl)) return `frame origin not allowed: ${String(frameUrl).slice(0, 90)}`;
   return null;
 }
 
@@ -446,8 +464,8 @@ function buildMenu() {
     {
       label: '文件(&F)',
       submenu: [
-        { label: '重新加载', role: 'reload' },
-        { label: '强制重新加载', role: 'forceReload' },
+        { label: '重新加载', accelerator: 'CmdOrCtrl+R', click: () => void reloadTarget(false) },
+        { label: '强制重新加载', accelerator: 'CmdOrCtrl+Shift+R', click: () => void reloadTarget(true) },
         { label: '在系统浏览器中打开', accelerator: 'CmdOrCtrl+Shift+B', click: () => maybeOpenExternal(state.appUrl) },
         { type: 'separator' },
         {
@@ -715,6 +733,77 @@ function targetUrlFor(layout) {
   return `http://${layout.host}:${layout.port}`;
 }
 
+/** A dev target or an explicit DY_DESKTOP_URL is not ours to start. */
+function usesExternalTarget() {
+  return MODE === 'dev' || Boolean(TARGET_URL_OVERRIDE);
+}
+
+/**
+ * Book the child the instant `fork()` returns. Until startEmbeddedBackend
+ * resolves, `state.backend` would otherwise be null, and a quit (or a boot that
+ * then fails) in that window would leave an orphan holding the port.
+ */
+function adoptBackendChild(child) {
+  state.backend = { child, host: state.layout.host, port: state.layout.port, reused: false };
+}
+
+async function startBackend(layout) {
+  state.starting = true;
+  try {
+    state.backend = await startEmbeddedBackend({ layout, log, onChild: adoptBackendChild });
+    // A remote/DY_DESKTOP_URL target keeps its own origin; the embedded one is exact.
+    state.appUrl = `http://${state.backend.host}:${state.backend.port}`;
+    state.appOrigin = new URL(state.appUrl).origin;
+  } finally {
+    state.starting = false;
+  }
+}
+
+/**
+ * Reload the app for real. `role: 'reload'` only re-paints the data: URL we drew
+ * ourselves, so a backend that failed to come up would be unrecoverable; this
+ * re-probes the target and forks a new backend if the old one died.
+ */
+let retrying = false;
+async function reloadTarget(hard) {
+  const win = state.win;
+  if (!win || win.isDestroyed() || state.shuttingDown || state.starting || retrying) return;
+
+  const child = state.backend && state.backend.child;
+  if (child && (child.exitCode !== null || child.signalCode)) {
+    log('embedded backend exited since boot; forking a new one');
+    state.backend = null;
+  }
+
+  if (!usesExternalTarget() && !state.backend) {
+    retrying = true;
+    showLoading({ title: PRODUCT_NAME, detail: '正在重新启动本地服务…', hint: state.appUrl });
+    try {
+      await startBackend(state.layout);
+    } catch (error) {
+      const message = (error && error.message) || String(error);
+      log(`retry: backend failed to start: ${message}`);
+      showLoading({ tone: 'error', title: '本地服务启动失败', detail: message, hint: state.appUrl });
+      return;
+    } finally {
+      retrying = false;
+    }
+  } else if (!(await probeTarget(state.appUrl))) {
+    showLoading({ tone: 'error', title: '找不到目标服务', detail: '目标地址没有响应 - 请确认服务已经启动', hint: state.appUrl });
+    return;
+  }
+
+  log(`retry: navigating window to ${state.appUrl}`);
+  try {
+    // From the real app origin a hard reload can keep Chromium's cache-bypass
+    // semantics; on the loading page that would only re-paint the page itself.
+    if (hard && isSameAppOrigin(win.webContents.getURL(), state.appOrigin)) win.webContents.reloadIgnoringCache();
+    else await win.loadURL(state.appUrl);
+  } catch (error) {
+    log(`retry loadURL settled with: ${(error && error.message) || error}`);
+  }
+}
+
 async function boot() {
   const layout = resolveLayout({
     isPackaged: app.isPackaged,
@@ -751,39 +840,31 @@ async function boot() {
   const win = createWindow(store);
   state.win = win;
   hardenWebContents(win.webContents);
-  registerIpc();
   buildMenu();
-  win.on('closed', () => {
-    state.win = null;
-  });
 
   /* Paint the loading page first: a blank window looks like a crash. */
   const bootingDetail = MODE === 'dev' ? '正在连接 Vite 开发服务…' : '正在启动本地服务…';
   showLoading({ title: PRODUCT_NAME, detail: bootingDetail, hint: state.appUrl });
 
-  const externalTarget = MODE === 'dev' || Boolean(TARGET_URL_OVERRIDE);
-  if (externalTarget) {
+  if (usesExternalTarget()) {
     if (!(await probeTarget(state.appUrl))) {
       const why = '目标地址没有响应 - ';
       const advice = MODE === 'dev' ? '先在仓库根目录运行 npm run dev' : '检查 DY_DESKTOP_URL 指向的服务';
       log(`target ${state.appUrl} is not answering: ${why}${advice}`);
-      showLoading({ tone: 'error', title: '找不到目标服务', detail: why + advice, hint: state.appUrl });
+      showLoading({ tone: 'error', title: '找不到目标服务', detail: `${why}${advice}（可用 文件 → 重新加载 重试）`, hint: state.appUrl });
       maybeSmokeAbort('target not reachable');
       return;
     }
   } else {
     try {
-      state.backend = await startEmbeddedBackend({ layout, log });
-      // A remote/DY_DESKTOP_URL target keeps its own origin; the embedded one is exact.
-      state.appUrl = `http://${state.backend.host}:${state.backend.port}`;
-      state.appOrigin = new URL(state.appUrl).origin;
+      await startBackend(layout);
     } catch (error) {
       const message = (error && error.message) || String(error);
       log(`backend failed to start: ${message}`);
       showLoading({
         tone: 'error',
         title: '本地服务启动失败',
-        detail: message,
+        detail: `${message}（可用 文件 → 重新加载 重试）`,
         hint: `调试: DY_PORT=${layout.port} node desktop/src/child-server.cjs`,
       });
       maybeSmokeAbort('backend failed to start');
@@ -815,9 +896,16 @@ if (!app.requestSingleInstanceLock({ product: PRODUCT_NAME })) {
     win.focus();
   });
 
+  // The web app remembers "sound on" in localStorage; without this Chromium
+  // refuses the first unmuted play() until a user gesture, so after a reload the
+  // feed silently falls back to muted instead of starting like the real client.
+  app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
   app.enableSandbox();
   app.setName(PRODUCT_NAME);
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+  // Channels exist before the first frame loads, so an early invoke can never
+  // be answered with "No handler registered".
+  registerIpc();
 
   app.on('web-contents-created', (_event, contents) => {
     const kind = contents.getType();
@@ -841,7 +929,20 @@ if (!app.requestSingleInstanceLock({ product: PRODUCT_NAME })) {
   });
 
   app.whenReady().then(boot).catch((error) => {
+    const message = (error && error.message) || String(error);
     log(`fatal during boot: ${(error && error.stack) || error}`);
+    const win = state.win;
+    if (win && !win.isDestroyed()) {
+      showLoading({ tone: 'error', title: '启动失败', detail: message, hint: state.appUrl });
+    } else {
+      // Nothing was ever painted, so a boot crash would look like a silent
+      // no-op double-click. A modal is the only channel left.
+      try {
+        dialog.showErrorBox(`${PRODUCT_NAME} 无法启动`, message);
+      } catch {
+        /* no display: the log line is all there is */
+      }
+    }
     app.exit(1);
   });
 
@@ -860,12 +961,16 @@ if (!app.requestSingleInstanceLock({ product: PRODUCT_NAME })) {
     app.quit();
   });
 
+  /* Hold the quit exactly once so the forked backend dies with us instead of
+     keeping 127.0.0.1:<port> bound for the next launch. */
+  let backendStopHeld = false;
   app.on('before-quit', (event) => {
-    const child = state.backend && state.backend.child;
-    if (state.shuttingDown || !child || child.exitCode !== null || child.signalCode) return;
+    // Set for every quit path, reused or not: it keeps the did-fail-load and
+    // reload handlers from painting an error page while the window goes away.
     state.shuttingDown = true;
-    // Hold the quit one turn so the forked backend dies with us instead of
-    // keeping 127.0.0.1:<port> bound for the next launch.
+    const child = state.backend && state.backend.child;
+    if (backendStopHeld || !child || child.exitCode !== null || child.signalCode) return;
+    backendStopHeld = true;
     event.preventDefault();
     log('before-quit: stopping embedded backend');
     stopEmbeddedBackend(state.backend, log)

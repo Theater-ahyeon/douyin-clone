@@ -44,9 +44,13 @@ class WindowStateStore {
       const bounds = {
         width: positiveInt(raw.width, 0, 16384),
         height: positiveInt(raw.height, 0, 16384),
-        x: finiteInt(raw.x),
-        y: finiteInt(raw.y),
       };
+      // A coordinate must stay absent rather than be stored as null: `x: null`
+      // reaches BrowserWindow as 0 and silently pins the window to a corner.
+      const x = finiteInt(raw.x);
+      const y = finiteInt(raw.y);
+      if (x !== null) bounds.x = x;
+      if (y !== null) bounds.y = y;
       if (bounds.width < this.minimum.width || bounds.height < this.minimum.height) return null;
       return {
         bounds,
@@ -75,25 +79,29 @@ class WindowStateStore {
     // `screen` is only usable after app is ready, so it is required lazily here.
     const { screen } = require('electron');
     const workAreas = screen.getAllDisplays().map((d) => d.workArea);
+    // No saved coordinate at all: the OS picks a spot, which is always visible.
+    if (bounds.x === undefined || bounds.y === undefined) return true;
     return workAreas.some((area) => {
       const overlapsHorizontally =
-        bounds.x !== undefined && bounds.x + OFFSCREEN_TOLERANCE > area.x &&
+        bounds.x + OFFSCREEN_TOLERANCE > area.x &&
         bounds.x + bounds.width - OFFSCREEN_TOLERANCE < area.x + area.width;
       const overlapsVertically =
-        bounds.y !== undefined && bounds.y + OFFSCREEN_TOLERANCE > area.y &&
+        bounds.y + OFFSCREEN_TOLERANCE > area.y &&
         bounds.y + bounds.height - OFFSCREEN_TOLERANCE < area.y + area.height;
-      return bounds.x === undefined || bounds.y === undefined || (overlapsHorizontally && overlapsVertically);
+      return overlapsHorizontally && overlapsVertically;
     });
   }
 
   write({ bounds, maximized, fullscreen }) {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
+      const x = finiteInt(bounds.x);
+      const y = finiteInt(bounds.y);
       const payload = {
         width: positiveInt(bounds.width, this.defaults.width),
         height: positiveInt(bounds.height, this.defaults.height),
-        x: finiteInt(bounds.x),
-        y: finiteInt(bounds.y),
+        ...(x !== null ? { x } : {}),
+        ...(y !== null ? { y } : {}),
         maximized: Boolean(maximized),
         fullscreen: Boolean(fullscreen),
         updatedAt: new Date().toISOString(),

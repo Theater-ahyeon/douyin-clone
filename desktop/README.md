@@ -17,7 +17,7 @@ build.
 | file | role |
 | --- | --- |
 | `package.json` | standalone project, `"main": "main.cjs"`, scripts `dev` / `start` / `smoke` / `build:win` / `check` |
-| `main.cjs` | Electron main process: window, geometry memory, menu, IPC handlers, navigation lockdown, lifecycle |
+| `main.cjs` | Electron main process: window, geometry memory, menu, IPC handlers, navigation lockdown, retry, lifecycle |
 | `preload.cjs` | the only renderer-visible surface (`window.douyinDesktop`) |
 | `electron-builder.yml` | win32 portable + NSIS packaging, `extraResources` for backend sources and `web/dist` |
 | `src/ipc-schema.cjs` | the channel table and every payload validator (single source of truth) |
@@ -27,7 +27,7 @@ build.
 | `src/loading-page.cjs` | the data-URL loading/error page painted while the backend boots |
 | `src/launch.cjs` | npx-free launcher (resolves `electron.exe` through the package) |
 | `src/build.cjs` | npx-free electron-builder runner |
-| `src/check.cjs` | GUI-free gate: `node --check` + IPC contract parity + validator unit tests |
+| `src/check.cjs` | GUI-free gate: `node --check` + IPC contract parity + handler/allowlist coverage + packaging payload + validator unit tests |
 | `build/icon.png` | 1024×1024 app icon (also used as the window/taskbar icon) |
 
 ---
@@ -84,6 +84,20 @@ API-only dev entry (`server/src/index.js` has no static root) is reported as an 
 with the fix in the message rather than loaded as a JSON 404 page.
 
 Shutting down never touches a reused backend - only a process this shell forked.
+The forked handle is booked the moment `fork()` returns, so a quit (or a boot
+that then fails) during startup still stops the child instead of leaving an
+orphan on the port.
+
+### Recovery after a failed start
+
+If the backend never comes up, the error page says why and **文件 → 重新加载**
+(`Ctrl+R`) re-probes the target and forks a new backend if the old one died;
+`Ctrl+Shift+R` is the same with Chromium's cache bypassed. A plain
+`role: 'reload'` would only re-paint the loading page we drew ourselves.
+
+The window is created with `--autoplay-policy=no-user-gesture-required`: the web
+client persists the speaker state, and without it Chromium rejects the first
+unmuted `play()` after a launch, so the feed silently falls back to muted.
 
 `web/dist` must exist (`npm run build` at the repo root).
 
@@ -240,15 +254,19 @@ A compromised page cannot: reach `require`/`process`/`module`/`ipcRenderer`
 control characters or oversized bodies into a native notification, escape the app
 origin via `window.open` (denied) or navigation (blocked; external http(s) is handed
 to the browser instead), get any session permission except notifications, or call a
-privileged handler from a frame that is not the main window's app-origin frame.
-`npm run check` asserts the validators and the preload/main channel-table parity, and
-`npm run smoke` re-runs four of those attacks against the live window.
+privileged handler from a frame that is not the main window's app-origin frame -
+which also excludes the shell's own loading/error page, since a `data:` URL has an
+opaque origin and never needs the bridge.
+`npm run check` asserts the validators, the preload/main channel-table parity, that
+every allowlisted channel has both a handler and a sender, and that
+`electron-builder.yml` ships every module the app requires; `npm run smoke` re-runs
+four of those attacks against the live window.
 
 ---
 
 ## Menu
 
-`文件` 重新加载 / 强制重新加载 / 在系统浏览器中打开 / 后端状态… / 退出
+`文件` 重新加载(`Ctrl+R`，必要时重启后端) 强制重新加载(`Ctrl+Shift+R`) / 在系统浏览器中打开 / 后端状态… / 退出
 `编辑` 撤销 重做 剪切 复制 粘贴 删除 全选 (native roles, so text inputs behave)
 `播放` the feed actions above
 `视图` 全屏 最小化 缩放 开发者工具(prod needs `DY_DESKTOP_DEVTOOLS=1`) `跳转`(推荐/关注/消息/我的/上传/搜索)

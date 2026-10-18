@@ -124,12 +124,17 @@ async function waitForBackend({ host, port, timeoutMs = READY_TIMEOUT_MS, isAliv
 }
 
 /** Forward the child's stdout/stderr into the main log with a tag. */
-function pipeChildStream(stream, tag, log) {
+function pipeChildStream(stream, tag, log, sink) {
   if (!stream) return;
   stream.setEncoding('utf8');
   let buffer = '';
   const flushLine = (line) => {
-    if (line.trim()) log(`[server] ${line.replace(/\s+$/, '')}`);
+    if (!line.trim()) return;
+    if (sink) {
+      sink.push(line.trim());
+      if (sink.length > 12) sink.shift();
+    }
+    log(`[server] ${line.replace(/\s+$/, '')}`);
   };
   stream.on('data', (chunk) => {
     buffer += chunk;
@@ -185,9 +190,10 @@ function seedDataDir({ seedDir, targetDir, log }) {
  * Start the embedded backend.
  * Resolves either with a forked child we own, or with `child: null` when a
  * backend was already listening (so a plain `npm run dev` stack is reused
- * instead of fighting over the port).
+ * instead of fighting over the port). `onChild` fires the instant the process
+ * exists, so a quit during the boot below still has a handle to kill.
  */
-async function startEmbeddedBackend({ layout, log }) {
+async function startEmbeddedBackend({ layout, log, onChild }) {
   const { host, port } = layout;
 
   if (await probeBackend({ host, port })) {
@@ -228,9 +234,17 @@ async function startEmbeddedBackend({ layout, log }) {
     windowsHide: true,
     detached: false,
   });
+  if (typeof onChild === 'function') {
+    try {
+      onChild(child);
+    } catch (error) {
+      log(`[desktop] onChild failed: ${error.message}`);
+    }
+  }
 
+  const lastErrLines = [];
   pipeChildStream(child.stdout, 'server', log);
-  pipeChildStream(child.stderr, 'server', log);
+  pipeChildStream(child.stderr, 'server', log, lastErrLines);
 
   let exitInfo = null;
   child.on('exit', (code, signal) => {
@@ -240,16 +254,31 @@ async function startEmbeddedBackend({ layout, log }) {
   child.on('error', (error) => log(`[desktop] backend child error: ${error.message}`));
 
   const ready = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('backend did not report a listening port in time')), READY_TIMEOUT_MS);
+    let settled = false;
+    const fail = (message) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      // The child's own last words ("port already in use", "web/dist missing")
+      // are what makes the error page actionable instead of `code=1`.
+      const tail = lastErrLines.slice(-2).join(' | ');
+      reject(new Error(tail ? `${message} - ${tail}` : message));
+    };
+    const timer = setTimeout(() => fail('backend did not report a listening port in time'), READY_TIMEOUT_MS);
     child.once('message', (msg) => {
-      clearTimeout(timer);
-      if (msg && msg.type === 'ready') resolve(msg);
-      else reject(new Error(`unexpected backend handshake: ${JSON.stringify(msg)}`));
+      if (settled) return;
+      if (msg && msg.type === 'ready') {
+        settled = true;
+        clearTimeout(timer);
+        resolve(msg);
+      } else {
+        fail(`unexpected backend handshake: ${JSON.stringify(msg)}`);
+      }
     });
-    child.once('exit', () => {
-      clearTimeout(timer);
-      reject(new Error(`backend exited before listening (code=${child.exitCode})`));
-    });
+    child.once('exit', () => fail(`backend exited before listening (code=${child.exitCode})`));
+    // A failed spawn never emits 'exit'; without this the page waits the full
+    // READY_TIMEOUT_MS for a process that does not exist.
+    child.once('error', (error) => fail(`could not start the backend process: ${error.message}`));
   });
 
   log(`[desktop] forking backend on http://${host}:${port} (static ${layout.webDist}, data ${layout.dataDir})`);
@@ -298,7 +327,10 @@ async function stopEmbeddedBackend(state, log = () => {}) {
   } catch {
     /* already gone */
   }
-  return { stopped: true, wasForked: true, graceful: false };
+  // The port is only free once the process is really gone; returning early lets a
+  // next launch race against a socket that is still bound.
+  await Promise.race([exited, sleep(1500)]);
+  return { stopped: child.exitCode !== null || child.signalCode !== null, wasForked: true, graceful: false };
 }
 
 module.exports = {

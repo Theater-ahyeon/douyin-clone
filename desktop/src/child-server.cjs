@@ -45,29 +45,6 @@ async function main() {
   env.DY_PORT = String(port);
   if (env.DY_DATA_DIR) env.DY_DATA_DIR = path.resolve(env.DY_DATA_DIR);
 
-  const indexPath = path.join(webDist, 'index.html');
-  if (!fs.existsSync(indexPath)) {
-    die(`${indexPath} does not exist. Build the frontend first:  npm run build   (repo root)`);
-  }
-
-  const serverSrc = path.join(backendRoot, 'server', 'src');
-  const { LOG } = await importEsm(path.join(serverSrc, 'config.js'), 'server/src/config.js');
-  const { openDatabase, closeDatabase, get } = await importEsm(path.join(serverSrc, 'db.js'), 'server/src/db.js');
-  const { ensureMediaDir } = await importEsm(path.join(serverSrc, 'media.js'), 'server/src/media.js');
-  const { startServer } = await importEsm(path.join(serverSrc, 'server.js'), 'server/src/server.js');
-
-  openDatabase();
-  try {
-    const row = get('SELECT COUNT(*) AS n FROM users', []);
-    if (!row || !row.n) log('[child-server] the database has no users yet - demo data: node scripts/seed.mjs');
-  } catch {
-    /* a brand new db file has no tables until openDatabase() ran; ignore */
-  }
-  await ensureMediaDir();
-
-  const { server } = await startServer({ staticDir: webDist, host, port });
-  log(`[child-server] serving api + web at http://${host}:${port} (static ${webDist})`);
-
   const send = (msg) => {
     try {
       if (typeof process.send === 'function') process.send(msg);
@@ -75,8 +52,9 @@ async function main() {
       /* parent already gone */
     }
   };
-  send({ type: 'ready', pid: process.pid, host, port, webDist, dataDir: env.DY_DATA_DIR || null });
 
+  let server = null;
+  let closeDb = null;
   let closing = false;
   const shutdown = (reason) => {
     if (closing) return;
@@ -84,17 +62,24 @@ async function main() {
     log(`[child-server] ${reason}, closing server`);
     const finish = () => {
       try {
-        closeDatabase();
+        if (closeDb) closeDb();
       } catch {
         /* already closed */
       }
       process.exit(0);
     };
+    if (!server) {
+      finish();
+      return;
+    }
     server.close(finish);
     // A keep-alive connection must not pin the process past the parent's grace window.
     setTimeout(finish, 1500).unref();
   };
 
+  // Installed before any slow work: an ESM import or a sqlite open can take a
+  // second, and a parent that dies during it must not leave a server that goes
+  // on to bind the port forever.
   process.on('message', (msg) => {
     if (msg && msg.type === 'shutdown') shutdown('shutdown requested by parent');
   });
@@ -104,6 +89,40 @@ async function main() {
   process.on('unhandledRejection', (reason) => {
     console.error('[child-server] unhandled rejection:', (reason && reason.stack) || reason);
   });
+
+  const indexPath = path.join(webDist, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    die(`${indexPath} does not exist. Build the frontend first:  npm run build   (repo root)`);
+  }
+
+  const serverSrc = path.join(backendRoot, 'server', 'src');
+  const { LOG } = await importEsm(path.join(serverSrc, 'config.js'), 'server/src/config.js');
+  const db = await importEsm(path.join(serverSrc, 'db.js'), 'server/src/db.js');
+  const { ensureMediaDir } = await importEsm(path.join(serverSrc, 'media.js'), 'server/src/media.js');
+  const { startServer } = await importEsm(path.join(serverSrc, 'server.js'), 'server/src/server.js');
+
+  db.openDatabase();
+  try {
+    const row = db.get('SELECT COUNT(*) AS n FROM users', []);
+    if (!row || !row.n) log('[child-server] the database has no users yet - demo data: node scripts/seed.mjs');
+  } catch {
+    /* a brand new db file has no tables until openDatabase() ran; ignore */
+  }
+  await ensureMediaDir();
+
+  try {
+    server = (await startServer({ staticDir: webDist, host, port })).server;
+  } catch (error) {
+    // startServer rejects on listen errors, so a listener further down would be
+    // too late for the collision case.
+    if (error && error.code === 'EADDRINUSE') die(`${host}:${port} is already in use - stop the other server or set DY_PORT`, 3);
+    throw error;
+  }
+  closeDb = db.closeDatabase;
+  log(`[child-server] serving api + web at http://${host}:${port} (static ${webDist})`);
+
+  send({ type: 'ready', pid: process.pid, host, port, webDist, dataDir: env.DY_DATA_DIR || null });
+
   server.on('error', (error) => {
     if (error && error.code === 'EADDRINUSE') {
       die(`${host}:${port} is already in use - stop the other server or set DY_PORT`, 3);

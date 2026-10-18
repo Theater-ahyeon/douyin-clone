@@ -72,6 +72,10 @@ class UrlPolicyTest {
         assertFalse(UrlPolicy.isTrusted("https://10.0.2.2:8787/", app))
         assertFalse(UrlPolicy.isTrusted("http://evil.example/", app))
         assertFalse(UrlPolicy.isTrusted("http://10.0.2.2:8787.evil.example/", app))
+        // Authority confusion: "app-origin@foreign-host" reads as the app but is a foreign host
+        // with userinfo; originOf must return null so it can never compare equal (see UrlPolicy).
+        assertNull(UrlPolicy.originOf("http://10.0.2.2:8787@evil.example/"))
+        assertFalse(UrlPolicy.isTrusted("http://10.0.2.2:8787@evil.example/", app))
         assertFalse(UrlPolicy.isTrusted(null, app))
         assertFalse(UrlPolicy.isTrusted("http://10.0.2.2:8787", "not a url"))
     }

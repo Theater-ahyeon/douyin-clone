@@ -9,7 +9,12 @@
  *      so the table is copied - this test is what keeps the copy honest);
  *   3. preload.cjs never references ipcRenderer outside its own two `on()`
  *      subscriptions and exposes only the allowlisted member names;
- *   4. the payload validators reject the shapes a compromised page would send.
+ *   4. every allowlisted channel actually has a handler / a sender, and the
+ *      allowlists the preload copies by hand have not drifted;
+ *   5. the hardened webPreferences are still there and no TLS bypass crept in;
+ *   6. electron-builder.yml ships every module the main process and the forked
+ *      child require, and nothing dev-only;
+ *   7. the payload validators reject the shapes a compromised page would send.
  */
 
 const fs = require('node:fs');
@@ -89,6 +94,27 @@ const unregistered = registeredHandlers.filter((expr) => !expr.startsWith('CH.')
 if (!unregistered.length) ok(`all ${registeredHandlers.length} ipcMain handlers use a named channel`);
 else bad('registerHandler channel expressions', unregistered.join(', '));
 
+/* An allowlisted channel with no handler hangs the renderer's await forever. */
+for (const [key, channel] of Object.entries(schema.CHANNELS.invoke)) {
+  const re = new RegExp(`registerHandler\\(\\s*CH\\.${key}\\b`);
+  if (re.test(mainSource)) ok(`${channel} has a handler`);
+  else bad(`${channel} has no ipcMain handler`, `preload can invoke it and never get an answer`);
+}
+/* A push channel nothing sends is dead weight in the allowlist; a name typo is
+   silently ignored by the renderer. */
+for (const [key, channel] of Object.entries(schema.CHANNELS.push)) {
+  const re = new RegExp(`sendToRenderer\\(\\s*CH\\.${key}\\b`);
+  if (re.test(mainSource)) ok(`${channel} is sent from main`);
+  else bad(`${channel} is never sent`, 'no menu/producer path found in main.cjs');
+}
+const pushSubscriptions = [...preloadSource.matchAll(/ipcRenderer\.on\((CHANNELS\.\w+)/g)].map((m) => m[1]);
+if (pushSubscriptions.length === 2) ok(`preload subscribes exactly the two push channels (${pushSubscriptions.join(', ')})`);
+else bad('preload push subscriptions', `found ${pushSubscriptions.length}, expected 2`);
+for (const ref of [...new Set([...mainSource.matchAll(/\bCHANNELS\.(\w+)/g)].map((m) => m[1]))]) {
+  if (schema.CHANNELS[ref]) ok(`CHANNELS.${ref} resolves`);
+  else bad(`CHANNELS.${ref}`, 'not a key of the schema table');
+}
+
 section('preload.cjs surface');
 const exposeMatch = preloadSource.match(/exposeInMainWorld\('([^']+)'/);
 if (exposeMatch && exposeMatch[1] === 'douyinDesktop') ok(`single global: window.${exposeMatch[1]}`);
@@ -122,7 +148,95 @@ const extraMembers = exposedMembers.filter((m) => !expectedMembers.includes(m));
 if (!missingMembers.length && !extraMembers.length) ok(`bridge members exactly as documented (${exposedMembers.length})`);
 else bad('bridge members', `missing=${missingMembers.join(',') || '-'} extra=${extraMembers.join(',') || '-'}`);
 
-/* -------------------------------------------------- 4. validator behaviour */
+/* The two allowlists the sandboxed preload copies by hand: a drifted entry makes
+   the preload drop a menu action (or accept one main never sends). */
+section('preload allowlist parity');
+for (const [name, expected] of [['FEED_ACTIONS', schema.FEED_ACTIONS], ['NAV_PATHS', schema.NAV_PATHS]]) {
+  const literal = preloadSource.match(new RegExp(`const ${name} = Object\\.freeze\\(\\[([^\\]]*)\\]`));
+  if (!literal) {
+    bad(`preload ${name}`, 'not found as a frozen inline array');
+    continue;
+  }
+  const got = [...literal[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  if (got.length === expected.length && got.every((v, i) => v === expected[i])) ok(`${name} matches src/ipc-schema.cjs`);
+  else bad(`${name} drifted`, `preload=[${got.join(',')}] schema=[${expected.join(',')}]`);
+}
+const feedMenuBlock = mainSource.match(/const FEED_MENU_ITEMS = \[([\s\S]*?)\n\];/);
+const navMenuBlock = mainSource.match(/const NAV_MENU_ITEMS = \[([\s\S]*?)\n\];/);
+if (!feedMenuBlock || !navMenuBlock) bad('menu templates', 'FEED_MENU_ITEMS / NAV_MENU_ITEMS block not found');
+const menuFeedActions = [...new Set([...(feedMenuBlock ? feedMenuBlock[1] : '').matchAll(/action: '(\w+)'/g)].map((m) => m[1]))];
+const badFeed = menuFeedActions.filter((a) => !schema.FEED_ACTIONS.includes(a));
+if (!menuFeedActions.length) bad('menu feed items', 'none parsed');
+else if (!badFeed.length) ok(`menu feed items all allowlisted (${menuFeedActions.join(', ')})`);
+else bad('menu uses actions outside the allowlist', badFeed.join(', '));
+const menuRoutes = [...new Set([...(navMenuBlock ? navMenuBlock[1] : '').matchAll(/path: '(\/[\w-]*)'/g)].map((m) => m[1]))];
+const badRoutes = menuRoutes.filter((p) => !schema.NAV_PATHS.includes(p));
+if (!menuRoutes.length) bad('menu jump targets', 'none parsed');
+else if (!badRoutes.length) ok(`menu jump targets all allowlisted (${menuRoutes.join(', ')})`);
+else bad('menu routes outside the allowlist', badRoutes.join(', '));
+
+section('webPreferences and certificate posture');
+const dangerous = [
+  [/nodeIntegration:\s*true/, 'nodeIntegration: true'],
+  [/contextIsolation:\s*false/, 'contextIsolation: false'],
+  [/sandbox:\s*false/, 'sandbox: false'],
+  [/webSecurity:\s*false/, 'webSecurity: false'],
+  [/allowRunningInsecureContent:\s*true/, 'allowRunningInsecureContent: true'],
+  [/enableRemoteModule:\s*true/, 'enableRemoteModule: true'],
+  [/'certificate-error'/, "a 'certificate-error' handler (TLS bypass)"],
+  [/ignoreCertificateErrors|--ignore-certificate-errors/, 'an --ignore-certificate-errors switch'],
+  [/webPreferences:\s*\{\s*\}/, 'an empty webPreferences block'],
+];
+for (const [re, label] of dangerous) {
+  if (!re.test(mainSource)) ok(`no ${label}`);
+  else bad(label);
+}
+for (const required of ['contextIsolation: true', 'nodeIntegration: false', 'sandbox: true', 'webSecurity: true']) {
+  if (mainSource.includes(required)) ok(`webPreferences declares ${required}`);
+  else bad('webPreferences', `${required} missing from the window options`);
+}
+
+/* ------------------------------------------------- packaging file list */
+
+section('electron-builder.yml payload');
+const builderSource = fs.readFileSync(path.join(desktopDir, 'electron-builder.yml'), 'utf8');
+const filesBlock = builderSource.match(/^files:\n((?:[ \t]*-[ \t]*\S+[ \t]*\n)+)/m);
+if (!filesBlock) bad('electron-builder files', 'no `-` list under `files:`');
+const listed = new Set(
+  (filesBlock ? filesBlock[1] : '')
+    .split('\n')
+    .map((line) => line.replace(/^[ \t]*-[ \t]*/, '').trim())
+    .filter(Boolean)
+);
+const runtimeDeps = new Set();
+for (const rel of ['main.cjs', 'preload.cjs', 'src/backend.cjs', 'src/child-server.cjs', 'src/window-state.cjs']) {
+  const src = fs.readFileSync(path.join(desktopDir, rel), 'utf8');
+  for (const m of src.matchAll(/require\(['"](\.[^'"]+\.cjs)['"]\)/g)) {
+    runtimeDeps.add(path.relative(desktopDir, path.resolve(path.dirname(path.join(desktopDir, rel)), m[1])).replace(/\\/g, '/'));
+  }
+  for (const m of src.matchAll(/'src',\s*'([\w-]+\.cjs)'/g)) runtimeDeps.add(`src/${m[1]}`);
+}
+const notShipped = [...runtimeDeps].filter((f) => !listed.has(f));
+if (!notShipped.length) ok(`every runtime module is in files: (${[...runtimeDeps].sort().join(', ')})`);
+else bad('runtime modules missing from files:', notShipped.join(', '));
+for (const devOnly of ['src/launch.cjs', 'src/build.cjs', 'src/check.cjs']) {
+  if (!listed.has(devOnly)) ok(`${devOnly} stays out of the package`);
+  else bad('dev-only file shipped', devOnly);
+}
+if (listed.has('build/icon.png')) ok('build/icon.png shipped (the window/taskbar icon reads it at runtime)');
+else bad('build/icon.png missing from files:', 'main.cjs falls back to the Electron default icon');
+for (const needed of ['asar: false', 'backend/server/src', 'backend/web/dist', 'backend-data-seed']) {
+  if (builderSource.includes(needed)) ok(`packaging declares ${needed}`);
+  else bad('packaging', `${needed} missing - the packaged layout cannot be resolved`);
+}
+const appIds = [...builderSource.matchAll(/^appId:\s*(\S+)/gm)].map((m) => m[1]);
+const pkg = JSON.parse(fs.readFileSync(path.join(desktopDir, 'package.json'), 'utf8'));
+if (appIds.includes(pkg.appId)) ok(`appId agrees with package.json (${pkg.appId})`);
+else bad('appId mismatch', `yml=${appIds.join('/')} package.json=${pkg.appId}`);
+if (!/\.?douyin\.com/i.test(appIds.join(' '))) ok('appId claims no third-party domain');
+else bad('appId squats a third-party domain', appIds.join(' '));
+
+/* -------------------------------------------------- validator behaviour */
 
 section('validator unit tests');
 const APP_ORIGIN = 'http://127.0.0.1:8798';

@@ -227,6 +227,12 @@ class MainActivity : Activity(), Host {
             allowFileAccessFromFileURLs = false
             @Suppress("DEPRECATION")
             allowUniversalAccessFromFileURLs = false
+            // The web app has its own login/register forms; keep the WebView from caching typed
+            // fields or passwords to disk (on the API 24-25 platform WebView these default to on).
+            @Suppress("DEPRECATION")
+            saveFormData = false
+            @Suppress("DEPRECATION")
+            savePassword = false
 
             // No popups, no second window: window.open / target=_blank stays in this WebView and
             // therefore inside the origin allow-list.
