@@ -253,6 +253,14 @@
 .video-frame:hover .scrub-time {
   opacity: 1;
 }
+/* touch has no hover: the strip kept opacity 0 but was still hit-testable, so a tap in the
+   bottom 18px of the card seeked (and paused) instead of pausing on the tap-layer, with no
+   visible track to explain it. On the active card the track is shown instead. */
+@media (hover: none) {
+  .feed-item.active .scrub {
+    opacity: 1;
+  }
+}
 
 /* ---------- action rail ---------- */
 .action-rail {

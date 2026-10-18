@@ -292,11 +292,16 @@ body {
   justify-content: center;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  /* opacity alone keeps the closed form in the tab order: the inputs stayed reachable
+     while invisible, so visibility is what actually removes the subtree */
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0s linear 0.2s;
 }
 .sheet-root.open {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
+  transition: opacity 0.2s ease, visibility 0s linear 0s;
 }
 .sheet-backdrop {
   position: absolute;

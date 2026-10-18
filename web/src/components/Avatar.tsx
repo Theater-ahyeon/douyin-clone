@@ -1,4 +1,4 @@
-import { memo, useMemo, type CSSProperties, type ReactNode } from 'react';
+import { memo, useMemo, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { colorAlpha, initialsOf } from '../utils/format';
 
 type AvatarUser = {
@@ -29,8 +29,23 @@ export const Avatar = memo(function Avatar({ user, size = 44, className = '', ba
     }),
     [size, color]
   );
+  const onKeyDown = onClick
+    ? (e: KeyboardEvent<HTMLDivElement>) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        onClick();
+      }
+    : undefined;
   return (
-    <div className={`avatar ${className}`} style={style} onClick={onClick} role={onClick ? 'button' : undefined}>
+    <div
+      className={`avatar ${className}`}
+      style={style}
+      onClick={onClick}
+      onKeyDown={onKeyDown}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={onClick ? user?.display_name || user?.username : undefined}
+    >
       <span style={{ fontSize: Math.max(11, size * 0.36) }}>{label}</span>
       {badge}
     </div>

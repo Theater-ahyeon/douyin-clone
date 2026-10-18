@@ -137,6 +137,7 @@ export default function MessagesPage({ params }: RouteProps) {
               <input
                 value={text}
                 placeholder="发送消息…"
+                aria-label="消息内容"
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') send();

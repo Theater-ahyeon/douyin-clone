@@ -149,6 +149,12 @@ export const FeedScroller = memo(function FeedScroller({ feedKey, kind, items, e
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      /* space activates the focused control; stealing it would break every rail / tab button
+         and the app-wide Ctrl-K shortcut reads as a plain "k" otherwise.
+         a keydown can target document/window, which has no closest() to call */
+      const onControl = !!(t && typeof t.closest === 'function' && t.closest('button, a, [role="button"]'));
+      if (e.code === 'Space' && onControl) return;
       if (e.key === 'ArrowDown' || e.key === 'j') {
         e.preventDefault();
         goTo(navRef.current.active + 1);

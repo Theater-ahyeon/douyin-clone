@@ -16,7 +16,13 @@ function FeedHud({ feedKey: key, kind }: { feedKey: string; kind: FeedKind }) {
   const soundOn = useSoundOn();
   return (
     <div className="feed-hud">
-      <button className="hud-btn" title={soundOn ? '静音' : '外放'} onClick={() => setSound(!soundOn)}>
+      <button
+        className="hud-btn"
+        title={soundOn ? '静音' : '外放'}
+        aria-label={soundOn ? '静音' : '外放'}
+        aria-pressed={!soundOn}
+        onClick={() => setSound(!soundOn)}
+      >
         <VolumeIcon size={17} on={soundOn} strokeWidth={1.9} />
       </button>
       <FeedRefreshButton feedKey={key} kind={kind} />
@@ -27,7 +33,13 @@ function FeedHud({ feedKey: key, kind }: { feedKey: string; kind: FeedKind }) {
 function FeedRefreshButton({ feedKey: key, kind }: { feedKey: string; kind: FeedKind }) {
   const { status } = useFeedMeta(key);
   return (
-    <button className="hud-btn" title="刷新当前 feed" onClick={() => refreshFeed(key, kind)} disabled={status === 'loading'}>
+    <button
+      className="hud-btn"
+      title="刷新当前 feed"
+      aria-label="刷新当前 feed"
+      onClick={() => refreshFeed(key, kind)}
+      disabled={status === 'loading'}
+    >
       <span className={`hud-refresh${status === 'loading' ? ' spinning' : ''}`}>↻</span>
     </button>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from '../router/Link';
 import { navigate, useRoute } from '../router/router';
 import { Avatar } from './Avatar';
@@ -12,14 +12,19 @@ export function TopBar() {
   const status = useAuthStatus();
   const q = route.query.get('q') ?? '';
   const [text, setText] = useState(q);
+  const typed = useRef(false);
 
   useEffect(() => {
-    if (route.path === '/search') setText(q);
+    if (route.path !== '/search') return;
+    typed.current = false;
+    setText(q);
   }, [q, route.path]);
 
   const debounced = useDebounced(text, 250);
   useEffect(() => {
-    if (route.path !== '/search' || !debounced.trim() || debounced === q) return;
+    /* only a keystroke may rewrite the URL: a settled debounce still holding the previous
+       query would otherwise replace a hashtag link's q and bounce the user back to old results */
+    if (route.path !== '/search' || !typed.current || !debounced.trim() || debounced === q) return;
     navigate(`/search?q=${encodeURIComponent(debounced.trim())}`, true);
   }, [debounced, q, route.path]);
 
@@ -37,7 +42,10 @@ export function TopBar() {
           className="search-input"
           value={text}
           placeholder="搜索用户、视频和话题"
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            typed.current = true;
+            setText(e.target.value);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') submit();
           }}
@@ -50,11 +58,7 @@ export function TopBar() {
           <UploadIcon size={18} strokeWidth={2.1} />
           <span>上传</span>
         </button>
-        <button
-          className="icon-btn"
-          title="消息"
-          onClick={() => requireAuth(() => navigate('/messages'))}
-        >
+        <button className="icon-btn" title="消息" aria-label="消息" onClick={() => requireAuth(() => navigate('/messages'))}>
           <MessageIcon size={21} />
         </button>
         {status === 'ready' && user ? (

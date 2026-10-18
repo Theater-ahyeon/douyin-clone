@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RouteProps } from '../router/router';
 import { navigate } from '../router/router';
 import { normalizePage, userApi } from '../api/endpoints';
@@ -17,7 +17,7 @@ import { toast } from '../store/ui';
 type Tab = 'works' | 'likes';
 type Rel = 'followers' | 'following';
 
-function EditPanel({ user, onDone }: { user: User; onDone: () => void }) {
+function EditPanel({ user, onDone }: { user: User; onDone: (saved: boolean) => void }) {
   const [name, setName] = useState(user.display_name);
   const [bio, setBio] = useState(user.bio);
   const [color, setColor] = useState(user.avatar_color);
@@ -28,7 +28,7 @@ function EditPanel({ user, onDone }: { user: User; onDone: () => void }) {
     try {
       await updateMe({ display_name: name.trim() || user.display_name, bio, avatar_color: color });
       toast('资料已更新', 'ok');
-      onDone();
+      onDone(true);
     } catch (err) {
       toast(err instanceof Error ? err.message : '保存失败', 'error');
     } finally {
@@ -61,7 +61,7 @@ function EditPanel({ user, onDone }: { user: User; onDone: () => void }) {
         </div>
       </label>
       <div className="row-actions">
-        <button className="btn ghost pill" onClick={onDone}>
+        <button className="btn ghost pill" onClick={() => onDone(false)}>
           取消
         </button>
         <button className="btn accent pill" onClick={save} disabled={busy}>
@@ -113,6 +113,7 @@ export default function UserPage({ params }: RouteProps) {
   const [extra, setExtra] = useState<Video[]>([]);
   const [next, setNext] = useState<string | null>(null);
   const [moreBusy, setMoreBusy] = useState(false);
+  const moreCtrl = useRef<AbortController | null>(null);
   const following = useIsFollowing(profile.data?.user.id);
 
   const listState = useAsync<{ items: Video[]; next: string | null }>(
@@ -127,7 +128,16 @@ export default function UserPage({ params }: RouteProps) {
     !!id
   );
 
+  useEffect(
+    () => () => {
+      moreCtrl.current?.abort();
+    },
+    []
+  );
+
   useEffect(() => {
+    /* a page tail from the previous tab/user must not append to the list being reset */
+    moreCtrl.current?.abort();
     setExtra([]);
     setNext(listState.data?.next ?? null);
   }, [listState.data]);
@@ -135,14 +145,19 @@ export default function UserPage({ params }: RouteProps) {
   const loadMore = () => {
     if (!next || moreBusy) return;
     setMoreBusy(true);
+    const ctrl = new AbortController();
+    moreCtrl.current = ctrl;
     userApi
-      .videos(id, next, 24, tab === 'likes' ? 'likes' : undefined)
+      .videos(id, next, 24, tab === 'likes' ? 'likes' : undefined, ctrl.signal)
       .then((raw) => {
+        if (ctrl.signal.aborted) return;
         const page = normalizePage<Video>(raw);
         setExtra((list) => [...list, ...page.items]);
         setNext(page.nextCursor);
       })
-      .catch(() => toast('加载更多失败', 'error'))
+      .catch(() => {
+        if (!ctrl.signal.aborted) toast('加载更多失败', 'error');
+      })
       .finally(() => setMoreBusy(false));
   };
 
@@ -215,7 +230,18 @@ export default function UserPage({ params }: RouteProps) {
             </>
           )}
         </div>
-        {editing && isSelf ? <EditPanel user={user} onDone={() => setEditing(false)} /> : null}
+        {editing && isSelf ? (
+          <EditPanel
+            user={user}
+            onDone={(saved) => {
+              setEditing(false);
+              /* docs-perf-notes: updateMe only drops the GET cache for /users/, which a mounted
+                 useAsync never re-reads because its [id] deps are unchanged — without this
+                 reload the header keeps the old nickname and bio until a manual refresh. */
+              if (saved) profile.reload();
+            }}
+          />
+        ) : null}
       </div>
       {rel ? (
         <div className="rel-panel">

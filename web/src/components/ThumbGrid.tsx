@@ -9,7 +9,7 @@ export function ThumbGrid({ items }: { items: Video[] }) {
     <div className="thumb-grid">
       {items.map((v) => (
         <button key={v.id} className="thumb" onClick={() => navigate(`/video/${v.id}`)} title={v.caption}>
-          {v.poster ? <img src={v.poster} alt="" loading="lazy" /> : <span className="thumb-fallback" />}
+          {v.poster ? <img src={v.poster} alt="" loading="lazy" decoding="async" /> : <span className="thumb-fallback" />}
           <span className="thumb-play">
             <PlayIcon size={13} />
             {formatCount(v.stats.views)}

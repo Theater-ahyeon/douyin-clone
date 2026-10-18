@@ -116,6 +116,9 @@ export default function UploadPage(_props: RouteProps) {
       <div className="upload-grid">
         <div
           className={`dropzone${dragging ? ' dragging' : ''}${file ? ' filled' : ''}`}
+          role="button"
+          tabIndex={0}
+          aria-label="选择视频文件"
           onDragOver={(e) => {
             e.preventDefault();
             setDragging(true);
@@ -123,6 +126,11 @@ export default function UploadPage(_props: RouteProps) {
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
           onClick={() => inputRef.current?.click()}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            inputRef.current?.click();
+          }}
         >
           {probe ? (
             <video className="upload-preview" src={probe.objectUrl} controls muted playsInline loop />

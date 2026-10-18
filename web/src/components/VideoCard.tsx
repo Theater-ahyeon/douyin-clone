@@ -127,15 +127,24 @@ export const VideoCard = memo(function VideoCard({ video, index, active, registe
 
     const onFrame = () => frameRef.current?.classList.add('live-frame');
 
+    const detach = (target: HTMLVideoElement) => {
+      target.removeEventListener('pause', onState);
+      target.removeEventListener('play', onState);
+      target.removeEventListener('loadeddata', onFrame);
+    };
+
     const attach = () => {
       const next = videoPool.elementFor(index);
-      if (next === el || !next) return;
-      if (el) {
-        el.removeEventListener('pause', onState);
-        el.removeEventListener('play', onState);
-        el.removeEventListener('loadeddata', onFrame);
-      }
+      if (next === el) return;
+      /* a released slot has no element: drop the listeners instead of keeping a dangling
+         handle on a <video> that now belongs to another card */
+      if (el) detach(el);
       el = next;
+      if (!el) {
+        stop();
+        return;
+      }
+      detach(el);
       el.addEventListener('pause', onState, { passive: true });
       el.addEventListener('play', onState, { passive: true });
       el.addEventListener('loadeddata', onFrame, { passive: true });
@@ -148,11 +157,7 @@ export const VideoCard = memo(function VideoCard({ video, index, active, registe
     return () => {
       stop();
       off();
-      if (el) {
-        el.removeEventListener('pause', onState);
-        el.removeEventListener('play', onState);
-        el.removeEventListener('loadeddata', onFrame);
-      }
+      if (el) detach(el);
       frameRef.current?.classList.remove('live-frame');
     };
   }, [active, index]);
@@ -178,6 +183,14 @@ export const VideoCard = memo(function VideoCard({ video, index, active, registe
     const move = (ev: globalThis.PointerEvent) => seek(ev.clientX);
     seek(e.clientX);
     el.pause();
+    /* capture keeps pointerup/pointercancel on the track: without it a drag released
+       outside the 18px strip never unbound this pair and every gesture added another.
+       it throws when the pointer is already gone, so scrubbing must survive the miss */
+    try {
+      track.setPointerCapture(e.pointerId);
+    } catch {
+      /* listeners below still catch a release made inside the strip */
+    }
     track.addEventListener('pointermove', move);
     track.addEventListener('pointerup', end);
     track.addEventListener('pointercancel', end);
@@ -187,7 +200,7 @@ export const VideoCard = memo(function VideoCard({ video, index, active, registe
     <article ref={itemRef} className={`feed-item${active ? ' active' : ''}`} data-index={index}>
       <div className="card-stage">
         <div className="video-frame" ref={frameRef} style={frameStyle}>
-          {video.poster ? <img className="card-poster" src={video.poster} alt="" draggable={false} /> : null}
+          {video.poster ? <img className="card-poster" src={video.poster} alt="" decoding="async" draggable={false} /> : null}
           <div className="video-slot" ref={slotRef} />
           <button
             className="tap-layer"

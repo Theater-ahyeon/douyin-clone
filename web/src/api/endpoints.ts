@@ -113,6 +113,7 @@ export const videoApi = {
   favorite: (id: string) => api.post<FavResult>(`/videos/${id}/favorite`),
   unfavorite: (id: string) => api.del<FavResult>(`/videos/${id}/favorite`),
   view: (id: string) => api.post<{ views: number }>(`/videos/${id}/views`),
+  share: (id: string) => api.post<{ shares: number }>(`/videos/${id}/share`),
   comments: (id: string) => api.get<unknown>(`/videos/${id}/comments`),
   addComment: (id: string, content: string, parent_id?: string | null) =>
     api

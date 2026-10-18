@@ -103,11 +103,19 @@ export function ensureFeed(key: string, kind: FeedKind, force = false) {
   void requestPage(key, kind, null, true);
 }
 
+const reqSeq = new Map<string, number>();
+
 async function requestPage(key: string, kind: FeedKind, cursor: string | null, first: boolean) {
+  /* a refresh and an in-flight page tail can overlap; only the newest response for a key
+     may write, otherwise the stale page gets appended on top of the fresh one */
+  const seq = (reqSeq.get(key) ?? 0) + 1;
+  reqSeq.set(key, seq);
+  const stale = () => reqSeq.get(key) !== seq;
   if (first) store.set((s) => ({ metas: { ...s.metas, [key]: { ...IDLE_META, status: 'loading' } } }));
   else store.set((s) => ({ metas: { ...s.metas, [key]: { ...(s.metas[key] ?? IDLE_META), loadingMore: true } } }));
   try {
     const raw = await feedApi.page(kind, cursor);
+    if (stale()) return;
     const { items, nextCursor } = normalizePage<Video>(raw);
     store.set((s) => {
       const prev = first ? [] : s.pages[key] ?? [];
@@ -127,6 +135,7 @@ async function requestPage(key: string, kind: FeedKind, cursor: string | null, f
     });
     warmFollowFlags(key);
   } catch (err) {
+    if (stale()) return;
     const message = err instanceof Error ? err.message : '加载失败';
     store.set((s) => ({
       metas: { ...s.metas, [key]: { ...(s.metas[key] ?? IDLE_META), status: 'error', error: message, loadingMore: false } }
@@ -186,8 +195,11 @@ authStore.subscribe(() => {
 
 export function toggleLike(video: Video) {
   requireAuth(() => {
-    const prevLiked = video.liked;
-    const prevLikes = video.stats.likes;
+    /* read the live entry, not the card's prop: two taps inside one frame would otherwise
+       both toggle from the same stale baseline and the second request goes out wrong */
+    const baseline = findVideo(store.get(), video.id) ?? video;
+    const prevLiked = baseline.liked;
+    const prevLikes = baseline.stats.likes;
     patchVideo(video.id, (v) => ({
       ...v,
       liked: !prevLiked,
@@ -209,8 +221,9 @@ export function toggleLike(video: Video) {
 
 export function toggleFavorite(video: Video) {
   requireAuth(() => {
-    const prevOn = video.favorited;
-    const prevCount = video.stats.favorites;
+    const baseline = findVideo(store.get(), video.id) ?? video;
+    const prevOn = baseline.favorited;
+    const prevCount = baseline.stats.favorites;
     patchVideo(video.id, (v) => ({
       ...v,
       favorited: !prevOn,
@@ -252,21 +265,57 @@ export function bumpComments(videoId: string, delta: number) {
   patchVideo(videoId, (v) => ({ ...v, stats: { ...v.stats, comments: Math.max(0, v.stats.comments + delta) } }));
 }
 
+/* docs-perf-notes: Electron has no window.prompt and Android WebView cancels the call, and
+   navigator.clipboard is undefined whenever the page is served from an insecure origin, so a
+   clipboard-only share was a silent no-op on both native shells. The selection copy is the
+   fallback that works everywhere; transient activation lasts long enough for it to run after
+   the async clipboard attempt has already rejected. The race is not paranoia — an unfocused
+   document leaves writeText pending forever, which would leave the button with no feedback. */
+const CLIPBOARD_BUDGET_MS = 400;
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      const copied = await Promise.race([
+        navigator.clipboard.writeText(text).then(() => true),
+        new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), CLIPBOARD_BUDGET_MS)),
+      ]);
+      if (copied) return true;
+    }
+  } catch {
+    /* permission or document focus denied */
+  }
+  try {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.cssText = 'position:fixed;top:-10000px;opacity:0';
+    document.body.appendChild(area);
+    area.select();
+    const copied = document.execCommand('copy');
+    area.remove();
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
 export function shareVideo(video: Video) {
   if (!isAuthed()) {
     requireAuth(() => shareVideo(video));
     return;
   }
   const link = `${location.origin}/#/video/${video.id}`;
-  const done = () => {
-    patchVideo(video.id, (v) => ({ ...v, stats: { ...v.stats, shares: v.stats.shares + 1 } }));
-    toast('链接已复制', 'ok');
-  };
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(link).then(done, () => toast('复制失败', 'error'));
-  } else {
-    window.prompt('复制视频链接', link);
-  }
+  /* A denied clipboard must not swallow the action: the share is counted either way, and when
+     the copy fails the toast shows the link itself instead of an error the user can't act on. */
+  void copyText(link).then((copied) => toast(copied ? '链接已复制' : link, copied ? 'ok' : 'info'));
+  const baseline = findVideo(store.get(), video.id) ?? video;
+  const prev = baseline.stats.shares;
+  patchVideo(video.id, (v) => ({ ...v, stats: { ...v.stats, shares: v.stats.shares + 1 } }));
+  videoApi.share(video.id).then(
+    (res) => patchVideo(video.id, (v) => ({ ...v, stats: { ...v.stats, shares: res.shares } })),
+    () => patchVideo(video.id, (v) => ({ ...v, stats: { ...v.stats, shares: prev } }))
+  );
 }
 
 const viewed = new Set<string>();

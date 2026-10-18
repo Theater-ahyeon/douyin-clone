@@ -4,7 +4,8 @@ import { videoApi } from '../api/endpoints';
 import { Avatar } from './Avatar';
 import { CloseIcon, HeartIcon, SendIcon, SpinnerIcon, TrashIcon } from './icons';
 import { Loading, EmptyState, ErrorState } from './States';
-import { bumpComments } from '../store/feed';
+import { bumpComments, useVideo } from '../store/feed';
+import { invalidate } from '../api/client';
 import { requireAuth, useSelf } from '../store/auth';
 import { closeComments, toast, useCommentsOpen, useCommentsVideo } from '../store/ui';
 import { navigate } from '../router/router';
@@ -55,6 +56,9 @@ function CommentRow({
    so opening it costs a compositor move instead of a re-layout of the feed. */
 export function CommentsDrawerBody({ video }: Props) {
   const me = useSelf();
+  /* the prop is a snapshot taken when the drawer opened; the header count has to follow the
+     store, otherwise bumpComments moves the rail number and this one stays where it was */
+  const live = useVideo(video.id) ?? video;
   const [comments, setComments] = useState<Comment[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +142,9 @@ export function CommentsDrawerBody({ video }: Props) {
       .then((res) => {
         const created = res.comment ?? (Array.isArray(res.items) ? res.items[0] : undefined);
         setComments((list) => list.map((c) => (c.id === temp.id ? created ?? c : c)));
+        /* the list GET is cached for 30s: without this the next open of this video's
+           comments replays a response that predates the comment just posted */
+        invalidate(`/videos/${video.id}/comments`);
         queueMicrotask(scrollToEnd);
       })
       .catch(() => {
@@ -152,17 +159,20 @@ export function CommentsDrawerBody({ video }: Props) {
     if (c.id.startsWith('tmp-')) return;
     setComments((list) => list.filter((x) => x.id !== c.id));
     bumpComments(video.id, -1);
-    videoApi.removeComment(c.id).catch(() => {
-      setComments((list) => [...list, c]);
-      bumpComments(video.id, 1);
-      toast('删除失败', 'error');
-    });
+    videoApi
+      .removeComment(c.id)
+      .then(() => invalidate(`/videos/${video.id}/comments`))
+      .catch(() => {
+        setComments((list) => [...list, c]);
+        bumpComments(video.id, 1);
+        toast('删除失败', 'error');
+      });
   };
 
   return (
     <>
       <header className="drawer-head">
-        <h3>{formatCount(video.stats.comments)} 条评论</h3>
+        <h3>{formatCount(live.stats.comments)} 条评论</h3>
         <button className="icon-btn" onClick={closeComments} aria-label="关闭评论">
           <CloseIcon size={20} />
         </button>
@@ -190,6 +200,7 @@ export function CommentsDrawerBody({ video }: Props) {
             rows={1}
             value={text}
             placeholder="友善评论，理性发言"
+            aria-label="评论内容"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {

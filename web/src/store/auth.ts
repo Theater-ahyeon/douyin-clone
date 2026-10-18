@@ -1,6 +1,6 @@
 import { createStore, useStore } from './reactive';
 import { authApi, userApi } from '../api/endpoints';
-import { getToken, setToken } from '../api/client';
+import { invalidate, getToken, setToken } from '../api/client';
 import type { User } from '../api/types';
 
 export type AuthStatus = 'idle' | 'loading' | 'anon' | 'ready';
@@ -55,6 +55,9 @@ export function bootstrapAuth() {
 
 export function applySession(token: string, user: User) {
   setToken(token);
+  /* every cached GET is per-viewer (liked / following flags) and the cache key has no user
+     in it, so a session switch must blank it along with the feed cache */
+  invalidate('');
   authStore.set({ status: 'ready', user, sheetOpen: false, pending: null });
 }
 
@@ -72,11 +75,13 @@ export async function register(username: string, password: string, display_name?
 
 export function logout() {
   setToken(null);
+  invalidate('');
   authStore.set({ status: 'anon', user: null });
 }
 
 export async function updateMe(patch: { display_name?: string; bio?: string; avatar_color?: string }) {
   const { user } = await userApi.update(patch);
+  invalidate('/users/');
   authStore.set({ user });
   return user;
 }

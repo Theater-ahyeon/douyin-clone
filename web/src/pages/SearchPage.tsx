@@ -41,10 +41,14 @@ export default function SearchPage({ route }: RouteProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const moreCtrl = useRef<AbortController | null>(null);
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => () => moreCtrl.current?.abort(), []);
 
   useEffect(() => {
+    /* a page tail belongs to the query that asked for it: abort it here, otherwise its
+       append writes the previous query's videos into these results */
+    moreCtrl.current?.abort();
     if (!q.trim()) {
       setVideos([]);
       setUsers([]);
@@ -71,7 +75,7 @@ export default function SearchPage({ route }: RouteProps) {
         setLoading(false);
       });
     return () => ctrl.abort();
-  }, [q]);
+  }, [q, nonce]);
 
   const more = () => {
     if (!cursor || loading) return;
@@ -91,7 +95,7 @@ export default function SearchPage({ route }: RouteProps) {
   };
 
   if (!q.trim()) return <EmptyState text="输入关键词开始搜索" hint="支持用户名、昵称和视频描述" />;
-  if (error && !videos.length) return <ErrorState text={error} onRetry={() => navigate(`/search?q=${encodeURIComponent(q)}`)} />;
+  if (error && !videos.length) return <ErrorState text={error} onRetry={() => setNonce((n) => n + 1)} />;
   if (loading && !videos.length && !users.length) return <Loading label={`搜索 ${q}`} />;
 
   return (
