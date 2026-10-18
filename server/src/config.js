@@ -4,6 +4,22 @@ import { fileURLToPath } from 'node:url';
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 
+// Every environment variable the server and scripts read, so a fresh clone has one
+// place to look:
+//   DY_DATA_DIR          writable dir for app.sqlite, .token-secret and videos/
+//   DY_HOST / DY_PORT    bind address (127.0.0.1 / 8787)
+//   DY_LOG               0 disables the per-request access log
+//   DY_CORS_ORIGINS      comma list appended to the dev origins below
+//   DY_MAX_UPLOAD_BYTES  upload cap (256 MiB)
+//   DY_TOKEN_SECRET      HMAC key; wins over <data-dir>/.token-secret (>=16 chars).
+//                        Set it when several processes must share one token space.
+//   DY_TOKEN_TTL_MS      token lifetime (30 days)
+//   DY_WEB_DIST          web build served by scripts/start.mjs
+//   DY_WEB_PORT          Vite port for scripts/dev.mjs
+//   DY_DEBUG             print seed stack traces
+//   DY_BENCH_VERBOSE     stream the benchmark child-server output
+//   DY_ELMONITOR         enable /api/__perf event-loop instrumentation
+//   DY_PERF_BASELINE     1 disables the read-path mitigations (benchmark A/B only)
 export const SERVER_ROOT = path.resolve(srcDir, '..');
 export const REPO_ROOT = path.resolve(SERVER_ROOT, '..');
 

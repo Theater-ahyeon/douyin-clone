@@ -63,7 +63,9 @@ export function createAppServer(options = {}) {
 
     let viewer = 0;
     res.on('finish', () => log(res.statusCode));
-    res.on('close', () => log(res.statusCode || 499));
+    // A request cut short before any response was started never reaches 'finish';
+    // `statusCode` would still read 200 there, so aborted uploads/streams log as 499.
+    res.on('close', () => log(res.headersSent ? res.statusCode : 499));
 
     applyHeaders(res, corsHeaders(req.headers.origin, allowList));
 

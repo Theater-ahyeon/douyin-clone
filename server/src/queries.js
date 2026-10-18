@@ -272,6 +272,18 @@ export function incrementViews(id) {
   return get(`SELECT views AS n FROM videos WHERE id = ?`, [numeric]).n;
 }
 
+export function incrementShares(id) {
+  const numeric = Number(id);
+  const changes = run(`UPDATE videos SET shares = shares + 1 WHERE id = ?`, [numeric]).changes;
+  if (!changes) throw httpError(404, 'not_found', 'video not found');
+  return get(`SELECT shares AS n FROM videos WHERE id = ?`, [numeric]).n;
+}
+
+export function mediaOwner(mediaKey) {
+  const row = get(`SELECT owner_id AS owner FROM media_objects WHERE media_key = ? LIMIT 1`, [mediaKey]);
+  return row ? row.owner : undefined;
+}
+
 export function countersFor(videoId) {
   const row = get(
     `SELECT
@@ -492,7 +504,7 @@ export function search(term, viewer, cursor, { videoLimit, userLimit }) {
   let userRows = [];
   let moreUsers = false;
   if (!(cursor && cursor.udone)) {
-    const where = [`LOWER(u.username) LIKE ? ${ESCAPE}`, `LOWER(u.display_name) LIKE ? ${ESCAPE}`];
+    const where = [`(LOWER(u.username) LIKE ? ${ESCAPE} OR LOWER(u.display_name) LIKE ? ${ESCAPE})`];
     const params = [needle, needle];
     if (cursor && Number.isInteger(cursor.ui)) {
       where.push('u.id > ?');
@@ -510,17 +522,19 @@ export function search(term, viewer, cursor, { videoLimit, userLimit }) {
   const lastUser = userRows[userRows.length - 1];
   const next = {};
   let hasNext = false;
+  // A finished side stays finished: dropping the flag would restart it from the
+  // top on the next page while the other side was still paging, repeating rows.
   if (moreVideos && lastVideo) {
     next.vk = lastVideo.sort_key;
     next.vi = lastVideo.id;
     hasNext = true;
-  } else if (!cursor || !cursor.vdone) {
+  } else {
     next.vdone = 1;
   }
   if (moreUsers && lastUser) {
     next.ui = lastUser.id;
     hasNext = true;
-  } else if (!cursor || !cursor.udone) {
+  } else {
     next.udone = 1;
   }
 

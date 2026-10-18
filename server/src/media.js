@@ -74,10 +74,19 @@ export function parseRange(header, size) {
       continue;
     }
     const start = Number(rawStart);
-    if (!Number.isFinite(start) || start >= size) continue;
-    const end = rawEnd === '' ? size - 1 : Math.min(Number(rawEnd), size - 1);
-    if (end < start) continue;
-    ranges.push({ start, end });
+    if (!Number.isFinite(start)) return null;
+    if (rawEnd === '') {
+      if (start >= size) continue;
+      ranges.push({ start, end: size - 1 });
+      continue;
+    }
+    const end = Number(rawEnd);
+    if (!Number.isFinite(end)) return null;
+    // first > last makes the byte-range-spec invalid (not merely unsatisfiable),
+    // and an invalid byte-range-set must be ignored outright by the recipient.
+    if (end < start) return null;
+    if (start >= size) continue;
+    ranges.push({ start, end: Math.min(end, size - 1) });
   }
   return { ranges };
 }
@@ -106,7 +115,14 @@ function pipeOne(stream, res) {
 
 async function writeText(res, text) {
   if (res.destroyed) return;
-  if (!res.write(text)) await new Promise((resolve) => res.once('drain', resolve));
+  if (res.write(text)) return;
+  // 'drain' never arrives once the socket is gone, so resolve on close/error too
+  // instead of stranding the multipart loop on a dead client.
+  await new Promise((resolve) => {
+    res.once('drain', resolve);
+    res.once('close', resolve);
+    res.once('error', resolve);
+  });
 }
 
 /**
@@ -288,6 +304,12 @@ export async function saveUpload(req, { ownerId, contentType, maxBytes = MAX_UPL
     };
     const onFinish = () => {
       if (settled) return;
+      // pipe() also ends the destination when the source closes early, so a
+      // truncated body can reach 'finish'. Only a fully received message is a file.
+      if (!req.complete) {
+        fail(httpError(499, 'client_aborted', 'upload aborted'));
+        return;
+      }
       settled = true;
       resolve();
     };
@@ -308,6 +330,10 @@ export async function saveUpload(req, { ownerId, contentType, maxBytes = MAX_UPL
   });
 
   const stat = await fsp.stat(target);
+  if (stat.size === 0) {
+    await fsp.rm(target, { force: true }).catch(() => {});
+    throw httpError(400, 'empty_upload', 'uploaded body is empty');
+  }
   return { filename, bytes: stat.size, contentType: mime };
 }
 

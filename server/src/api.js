@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import path from 'node:path';
 
 import { createToken, hashPassword, verifyPassword } from './auth.js';
 import { MAX_UPLOAD_BYTES } from './config.js';
 import {
   authorVideos, conversations, createUser, deleteComment, ensureThread, feedVideos, getVideo,
-  incrementViews, insertComment, insertMessage, insertVideo, listComments, listFollowers,
-  listFollowing, listMessages, markThreadRead, registerMediaObject, search, setFollow,
+  incrementShares, incrementViews, insertComment, insertMessage, insertVideo, listComments, listFollowers,
+  listFollowing, listMessages, markThreadRead, mediaOwner, registerMediaObject, search, setFollow,
   setVideoFavorite, setVideoLike, updateUserProfile, userById, userByUsername, userStats,
 } from './queries.js';
 import { Router } from './router.js';
@@ -63,21 +62,20 @@ function normalizeMediaKey(raw) {
   return { filename: tail, absolute: resolveMediaPath(tail) };
 }
 
+// A media_key is only publishable by the account that uploaded it; otherwise any user
+// could republish someone else's file as their own work by guessing the name.
+function requireOwnedMedia(filename, ownerId) {
+  const owner = mediaOwner(filename);
+  if (owner === ownerId) return;
+  if (owner === undefined) throw httpError(403, 'media_not_uploaded', 'upload the file through PUT /api/upload first');
+  throw httpError(403, 'media_not_owned', 'that media belongs to another user');
+}
+
 function requireAuth(ctx) {
   if (ctx.viewer) return ctx.viewer;
   // A present-but-unusable Authorization header must not be answered as "anonymous".
   if (ctx.authFailed) throw httpError(401, 'invalid_token', 'token is invalid or expired');
   throw httpError(401, 'unauthorized', 'authentication required');
-}
-
-function contentTypeFor(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === '.webm') return 'video/webm';
-  if (ext === '.mov') return 'video/quicktime';
-  if (ext === '.ogv') return 'video/ogg';
-  if (ext === '.mp4' || ext === '.m4v') return 'video/mp4';
-  if (ext === '.mkv') return 'video/x-matroska';
-  return 'application/octet-stream';
 }
 
 // The upload endpoint lets the client send either URL-encoded JSON or literal JSON.
@@ -127,16 +125,24 @@ export function buildRouter() {
     if (userByUsername(username)) throw httpError(409, 'username_taken', 'that username is already taken');
     const displayName = optionalString(body, 'display_name', { max: 40 }) || username;
     const { salt, hash } = hashPassword(password);
-    const id = createUser({
-      username,
-      passwordHash: hash,
-      passwordSalt: salt,
-      displayName,
-      bio: '',
-      avatarColor: pickColor(username),
-      verified: false,
-      createdAt: now(),
-    });
+    let id;
+    try {
+      id = createUser({
+        username,
+        passwordHash: hash,
+        passwordSalt: salt,
+        displayName,
+        bio: '',
+        avatarColor: pickColor(username),
+        verified: false,
+        createdAt: now(),
+      });
+    } catch (error) {
+      // The read above only short-circuits the common case; two concurrent signups with
+      // the same name still reach the UNIQUE index, and that must read as 409, not 500.
+      if (!/UNIQUE constraint failed/.test(String(error && error.message))) throw error;
+      throw httpError(409, 'username_taken', 'that username is already taken');
+    }
     return { token: createToken(id), user: userFromRow(userById(id)) };
   }, { public: true });
 
@@ -233,9 +239,8 @@ export function buildRouter() {
     const poster = optionalString(body, 'poster', { max: 200000 }) || syntheticPoster(caption || '新作品', id);
     const { filename, absolute } = normalizeMediaKey(body.media_key);
     if (!fs.existsSync(absolute)) throw httpError(400, 'media_not_found', `unknown media_key: ${filename}`);
-    const bytes = fs.statSync(absolute).size;
+    requireOwnedMedia(filename, id);
     const createdAt = now();
-    registerMediaObject({ mediaKey: filename, ownerId: id, bytes, contentType: contentTypeFor(absolute), origin: 'upload' });
     const videoId = insertVideo({
       authorId: id,
       caption,
@@ -297,6 +302,11 @@ export function buildRouter() {
   route('POST', '/api/videos/:id/views', ({ params }) => ({
     views: incrementViews(decodeIdParam(params.id, 'video')),
   }));
+
+  route('POST', '/api/videos/:id/share', ({ params, viewer, authFailed }) => {
+    requireAuth({ viewer, authFailed });
+    return { shares: incrementShares(decodeIdParam(params.id, 'video')) };
+  });
 
   /* --------------------------------------------------------------- comments -- */
 
